@@ -28,6 +28,7 @@ from .stream import (
     first_labels,
     job,
     match_media,
+    matching_media,
     parse_blocks,
     select_labels,
 )
@@ -212,11 +213,13 @@ def main(argv: list[str] | None = None) -> int:
         target, mname, m, offset, pr = _resolve(reg, args, data)
         if pr is not None:
             try:
-                fname, _ = match_media(data, reg.media)
+                names = matching_media(data, reg.media)
             except ValueError as e:
                 sys.exit(str(e))
-            if fname != mname:
-                sys.exit(f"REFUSED: {args.file} was written for {fname}, printer {pr.name} holds {mname}")
+            if mname not in names:
+                sys.exit(
+                    f"REFUSED: {args.file} was written for {names or 'no known media'}, printer {pr.name} holds {mname}"
+                )
         total = count_labels(data)
         if args.labels:
             data = select_labels(data, args.labels, m)

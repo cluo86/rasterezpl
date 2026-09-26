@@ -196,14 +196,28 @@ def header_of(data: bytes) -> tuple[int, int, int] | None:
     return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
 
 
-def match_media(data: bytes, medias: dict[str, Media]) -> tuple[str, Media]:
-    """The media a job was written for, by its ^Q/^W header, among the given ones (name → Media)."""
+def matching_media(data: bytes, medias: dict[str, Media]) -> list[str]:
+    """Names of the media a job could have been written for: same ^Q/^W header (the header carries mm, not dpi,
+    so the same stock at two resolutions matches twice) and every Q block inside the page."""
     h = header_of(data)
     if h is None:
         raise ValueError("not an EZPL job written by rasterezpl (no ^Q/^W header)")
-    hits = [
-        (n, m) for n, m in medias.items() if (round(m.length_mm), round(m.gap_mm), round(m.width_mm)) == h
+    blocks = parse_blocks(data)
+    xmax = max((x + wb * 8 for _s, qs in blocks for x, _y, wb, _r, _raw in qs), default=0)
+    ymax = max((y + rows for _s, qs in blocks for _x, y, _wb, rows, _raw in qs), default=0)
+    return [
+        n
+        for n, m in medias.items()
+        if (round(m.length_mm), round(m.gap_mm), round(m.width_mm)) == h
+        and xmax <= m.width_px + 7
+        and ymax <= m.length_px
     ]
+
+
+def match_media(data: bytes, medias: dict[str, Media]) -> tuple[str, Media]:
+    """The one media a job was written for (see matching_media); ambiguity is an error — name the media."""
+    hits = matching_media(data, medias)
     if len(hits) != 1:
-        raise ValueError(f"header ^Q{h[0]},{h[1]} ^W{h[2]} matches {len(hits)} media: {[n for n, _ in hits]}")
-    return hits[0]
+        h = header_of(data)
+        raise ValueError(f"header ^Q{h[0]},{h[1]} ^W{h[2]} matches {len(hits)} media: {hits}")
+    return hits[0], medias[hits[0]]

@@ -87,6 +87,16 @@ def test_header_and_media_match():
     data = rz.job(M2, [[img(16, 8, []), None]])
     assert rz.header_of(data) == (10, 2, 20)
     assert rz.match_media(data, {"x": M2, "p": rz.PANDUIT_S150X225VATY_2UP})[0] == "x"
+    # the same stock at two resolutions shares a header: a 300 dpi job's blocks overflow the 203 dpi page, so it
+    # matches only the 300 preset; a small 203 dpi job fits both and stays ambiguous (name the media)
+    both = {"p300": rz.PANDUIT_S150X225VATY_2UP, "p203": rz.PANDUIT_S150X225VATY_2UP_203}
+    j300 = rz.job(rz.PANDUIT_S150X225VATY_2UP, [[img(450, 225, [(449, 0)]), None]])
+    assert rz.matching_media(j300, both) == ["p300"]
+    m203 = rz.PANDUIT_S150X225VATY_2UP_203
+    j203 = rz.job(m203, [[img(*m203.area_px(0)[2:], [(0, 0)]), None]])
+    assert rz.matching_media(j203, both) == ["p300", "p203"]
+    with pytest.raises(ValueError):
+        rz.match_media(j203, both)
     with pytest.raises(ValueError):
         rz.match_media(data, {"p": rz.PANDUIT_S150X225VATY_2UP})
     with pytest.raises(ValueError):

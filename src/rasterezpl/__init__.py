@@ -2,7 +2,7 @@
 
 from .calibrate import ruler_job, ruler_page
 from .media import EOL, LEFT_MARGIN_MAX_DOTS, OFFSET_MAX_DOTS, Media, offset_commands, setup_commands
-from .presets import PANDUIT_S150X225VATY_2UP, PRESETS
+from .presets import PANDUIT_S150X225VATY_2UP, PANDUIT_S150X225VATY_2UP_203, PRESETS
 from .stream import (
     STRIP_ROWS,
     bitmap_rows,
@@ -14,6 +14,7 @@ from .stream import (
     job,
     label_block,
     match_media,
+    matching_media,
     parse_blocks,
     parse_selection,
     pattern_blocks,
@@ -33,6 +34,7 @@ __all__ = [
     "STRIP_ROWS",
     "FONT_CANDIDATES",
     "PANDUIT_S150X225VATY_2UP",
+    "PANDUIT_S150X225VATY_2UP_203",
     "PRESETS",
     "Media",
     "UsbPrinter",
@@ -47,6 +49,7 @@ __all__ = [
     "label_block",
     "list_usb_printers",
     "match_media",
+    "matching_media",
     "offset_commands",
     "parse_blocks",
     "parse_selection",
