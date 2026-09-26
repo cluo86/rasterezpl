@@ -83,6 +83,17 @@ def test_parse_select_decode_roundtrip():
     assert len(rz.decode_job(data, M2)) == 3
 
 
+def test_blocks_outside_areas_catches_a_stale_frame():
+    m = rz.PANDUIT_S150X225VATY_2UP
+    good = rz.job(m, [[img(450, 225, [(0, 0), (449, 224)]), img(450, 225, [(10, 10)])]])
+    assert rz.blocks_outside_areas(good, m) == []
+    # the same stock drawn leading-edge-up (no rotation): blocks land at y 19… — outside the rotated areas
+    unrotated = rz.Media("u", 300, m.width_mm, m.length_mm, m.gap_mm, rotate180=False, areas_in=m.areas_in)
+    stale = rz.job(unrotated, [[img(450, 225, [(0, 0)]), None]])
+    bad = rz.blocks_outside_areas(stale, m)
+    assert bad and bad[0][0] == 1 and bad[0][2] == 19
+
+
 def test_header_and_media_match():
     data = rz.job(M2, [[img(16, 8, []), None]])
     assert rz.header_of(data) == (10, 2, 20)

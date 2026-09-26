@@ -188,6 +188,24 @@ def select_labels(data: bytes, spec: str, m: Media) -> bytes:
     return bytes(out)
 
 
+def blocks_outside_areas(data: bytes, m: Media) -> list[tuple[int, int, int]]:
+    """(block number, x, y) of every Q block that does not lie inside one of the media's print areas in the
+    printer frame. A job written for another frame, pitch or dpi of the same stock fails this — e.g. a file
+    rasterised before a geometry fix (2026-09-26: blocks at y 83–171 in a leading-edge frame printed on the
+    laminate; the media's areas begin at y 431). Empty = every block is where the media says it prints."""
+    rects = [m.printer_rect(k) for k in range(len(m.areas_in))]
+    bad = []
+    for n, (_setup, qs) in enumerate(parse_blocks(data), start=1):
+        for x, y, wb, rows, _raw in qs:
+            x1, y1 = x + wb * 8, y + rows
+            if not any(
+                ax - 7 <= x and x1 <= ax + aw + 7 and ay <= y and y1 <= ay + ah + 7
+                for ax, ay, aw, ah in rects
+            ):
+                bad.append((n, x, y))
+    return bad
+
+
 def header_of(data: bytes) -> tuple[int, int, int] | None:
     """(length_mm, gap_mm, width_mm) from a job's first ^Q/^W header, or None if it is not our stream."""
     import re

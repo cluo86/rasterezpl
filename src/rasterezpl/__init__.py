@@ -6,6 +6,7 @@ from .presets import PANDUIT_S150X225VATY_2UP, PANDUIT_S150X225VATY_2UP_203, PRE
 from .stream import (
     STRIP_ROWS,
     bitmap_rows,
+    blocks_outside_areas,
     count_labels,
     decode_block,
     decode_job,
@@ -39,6 +40,7 @@ __all__ = [
     "Media",
     "UsbPrinter",
     "bitmap_rows",
+    "blocks_outside_areas",
     "count_labels",
     "decode_block",
     "decode_job",

@@ -23,6 +23,7 @@ from .calibrate import ruler_job
 from .media import Media
 from .registry import Registry, load
 from .stream import (
+    blocks_outside_areas,
     count_labels,
     decode_block,
     first_labels,
@@ -220,6 +221,13 @@ def main(argv: list[str] | None = None) -> int:
                 sys.exit(
                     f"REFUSED: {args.file} was written for {names or 'no known media'}, printer {pr.name} holds {mname}"
                 )
+        bad = blocks_outside_areas(data, m)
+        if bad:
+            bn, bx, by = bad[0]
+            sys.exit(
+                f"REFUSED: {args.file} has {len(bad)} block(s) outside {mname}'s print areas (first: block {bn} at "
+                f"x {bx}, y {by}) — written for another frame or geometry of this stock; regenerate it"
+            )
         total = count_labels(data)
         if args.labels:
             data = select_labels(data, args.labels, m)
