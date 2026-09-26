@@ -218,6 +218,6 @@ def match_media(data: bytes, medias: dict[str, Media]) -> tuple[str, Media]:
     """The one media a job was written for (see matching_media); ambiguity is an error — name the media."""
     hits = matching_media(data, medias)
     if len(hits) != 1:
-        h = header_of(data)
+        h = header_of(data) or (0, 0, 0)
         raise ValueError(f"header ^Q{h[0]},{h[1]} ^W{h[2]} matches {len(hits)} media: {hits}")
     return hits[0], medias[hits[0]]
