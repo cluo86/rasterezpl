@@ -1,0 +1,26 @@
+# Copy to ~/.config/rasterezpl/printers.yaml (or point RASTEREZPL_PRINTERS / --registry at it).
+# Offsets are per MACHINE: measure each printer once with `rasterezpl ruler`, record here, never in job files.
+
+media:
+  # a Godex 92 x 34 mm label with one print area covering the whole label; the setup numbers are the ones
+  # GoLabel sends for it (from the .ezpx template's Setup)
+  godex-92x34:
+    dpi: 203
+    width_mm: 92
+    length_mm: 34
+    gap_mm: 2
+    speed: 3
+    darkness: 14
+    stop_mm: 18
+    areas_in: [[0, 0, 3.622, 1.339]]
+
+printers:
+  tdp43me:
+    transport: "usb:TDP43ME"            # usb:<name part> | usb:<serial> | tcp://host[:9100] | lp:queue
+    media: panduit-s150x225vaty-2up     # preset
+    offset_in: [0.0, 0.0]               # from the ruler print: x >= 0 (^R), y +/- (~Q), inches
+    note: "not calibrated yet"
+  g500:
+    transport: "usb:G500"
+    media: godex-92x34
+    offset_in: [0.0, 0.0]
