@@ -80,6 +80,8 @@ def test_parse_select_decode_roundtrip():
     assert pg.crop((bx, by, bx + bw, by + bh)).tobytes() == b.rotate(180).tobytes()
     sel = rz.select_labels(data, "1-2,5", M2)
     assert rz.count_labels(sel) == 2 and sel.startswith(rz.label_block(M2, [a, b]))
+    # a partial selection re-encodes each kept area at its own rectangle: it still passes the placement check
+    assert rz.blocks_outside_areas(only2, M2) == [] and rz.blocks_outside_areas(sel, M2) == []
     assert len(rz.decode_job(data, M2)) == 3
 
 

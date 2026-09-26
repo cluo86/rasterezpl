@@ -177,14 +177,12 @@ def select_labels(data: bytes, spec: str, m: Media) -> bytes:
         if len(areas) == per:
             out += serialise_block(setup, qs)
             continue
-        from PIL import Image
-
         page = decode_block(qs, m)
-        keep = Image.new("L", page.size, 255)
-        for a in areas:
+        out += setup
+        for a in sorted(areas):
             ax, ay, aw, ah = m.printer_rect(a)
-            keep.paste(page.crop((ax, ay, ax + aw, ay + ah)), (ax, ay))
-        out += setup + pattern_blocks(keep, 0, 0) + b"E" + EOL
+            out += pattern_blocks(page.crop((ax, ay, ax + aw, ay + ah)), ax, ay)  # each kept area at its rect
+        out += b"E" + EOL
     return bytes(out)
 
 
