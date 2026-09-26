@@ -127,6 +127,8 @@ def _resolve(reg: Registry, args, data: bytes | None = None):
         return target, pr.media_name, pr.media, pr.offset_in, pr
     if not args.to:
         sys.exit("--printer or --to is required")
+    if getattr(args, "media", None) is None and data is None:
+        return args.to, "", None, (0.0, 0.0), None  # status, or a bare ruler: no media needed / known yet
     mname, m = _media(reg, getattr(args, "media", None), data)
     return args.to, mname, m, (0.0, 0.0), None
 
@@ -240,6 +242,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "ruler":
         fdata = Path(args.file).read_bytes() if args.file else None
         target, _, m, _, _ = _resolve(reg, args, fdata)
+        if m is None:
+            sys.exit("--media or --printer is required for the ruler")
         font = find_font(args.font, "DejaVu Sans")
         if font is None:
             sys.exit("no font for the tick numbers (Arial / DejaVu Sans)")
