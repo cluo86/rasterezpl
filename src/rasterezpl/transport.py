@@ -137,10 +137,28 @@ class UsbPrinter:
             self._util.release_interface(self.dev, self.intf.bInterfaceNumber)
         self._util.dispose_resources(self.dev)
 
-    def write(self, data: bytes, timeout_ms: int = 10000) -> int:
+    def write(self, data: bytes, timeout_ms: int = 10000, deadline_s: float = 600.0) -> int:
+        """Stream a job. A big job fills the printer's input buffer and the printer then takes data only as fast
+        as it prints, so a chunk write can time out while the printer is busy: that chunk is retried until
+        ``deadline_s`` (2026-09-26: eight 17 KB rows back to back timed out at the default 10 s)."""
+        import time
+
+        import usb.core
+
         sent = 0
+        t_end = time.monotonic() + deadline_s
         for i in range(0, len(data), USB_CHUNK):
-            sent += self.ep_out.write(data[i : i + USB_CHUNK], timeout=timeout_ms)
+            chunk = data[i : i + USB_CHUNK]
+            while True:
+                try:
+                    sent += self.ep_out.write(chunk, timeout=timeout_ms)
+                    break
+                except usb.core.USBTimeoutError:
+                    if time.monotonic() > t_end:
+                        raise RuntimeError(
+                            f"{self.name}: printer stopped taking data for {deadline_s:.0f} s after {sent} bytes "
+                            "(paused, out of media or ribbon, or a jam?)"
+                        ) from None
         return sent
 
     def read(self, timeout_ms: int = 2000) -> str:
