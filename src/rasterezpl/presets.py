@@ -21,6 +21,17 @@ PANDUIT_S150X225VATY_2UP = Media(
     ),
 )
 
+# the same stock on a 203 dpi head (a Godex G500 carrying Panduit labels): identical inches, coarser dots
+PANDUIT_S150X225VATY_2UP_203 = Media(
+    name="Panduit S150X225VATY (2 across, 203 dpi)",
+    dpi=203,
+    width_mm=PANDUIT_S150X225VATY_2UP.width_mm,
+    length_mm=PANDUIT_S150X225VATY_2UP.length_mm,
+    gap_mm=PANDUIT_S150X225VATY_2UP.gap_mm,
+    areas_in=PANDUIT_S150X225VATY_2UP.areas_in,
+)
+
 PRESETS: dict[str, Media] = {
     "panduit-s150x225vaty-2up": PANDUIT_S150X225VATY_2UP,
+    "panduit-s150x225vaty-2up-203": PANDUIT_S150X225VATY_2UP_203,
 }
