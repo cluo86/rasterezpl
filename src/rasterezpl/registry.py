@@ -68,9 +68,10 @@ def registry_path(explicit: str | None = None) -> Path | None:
 
 def media_from_dict(name: str, d: dict) -> Media:
     areas = tuple(tuple(float(v) for v in a) for a in d.get("areas_in", ()))
-    for a in areas:
+    labels = tuple(tuple(float(v) for v in a) for a in d.get("labels_in", ()))
+    for a in (*areas, *labels):
         if len(a) != 4:
-            raise ValueError(f"media {name}: areas_in entries are [x, y, w, h] inches, got {a}")
+            raise ValueError(f"media {name}: areas_in / labels_in entries are [x, y, w, h] inches, got {a}")
     return Media(
         name=str(d.get("name", name)),
         dpi=int(d["dpi"]),
@@ -83,6 +84,7 @@ def media_from_dict(name: str, d: dict) -> Media:
         stop_mm=None if d.get("stop_mm") is None else int(d["stop_mm"]),
         rotate180=bool(d.get("rotate180", True)),
         areas_in=areas,  # type: ignore[arg-type]
+        labels_in=labels,  # type: ignore[arg-type]
     )
 
 

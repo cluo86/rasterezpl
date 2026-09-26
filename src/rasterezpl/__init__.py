@@ -3,6 +3,7 @@
 from .calibrate import ruler_job, ruler_page
 from .media import EOL, LEFT_MARGIN_MAX_DOTS, OFFSET_MAX_DOTS, Media, offset_commands, setup_commands
 from .presets import PANDUIT_S150X225VATY_2UP, PANDUIT_S150X225VATY_2UP_203, PRESETS
+from .proof import proof_image
 from .stream import (
     STRIP_ROWS,
     bitmap_rows,
@@ -56,6 +57,7 @@ __all__ = [
     "parse_blocks",
     "parse_selection",
     "pattern_blocks",
+    "proof_image",
     "pt_to_px",
     "render_text",
     "ruler_job",

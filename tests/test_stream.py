@@ -96,6 +96,23 @@ def test_blocks_outside_areas_catches_a_stale_frame():
     assert bad and bad[0][0] == 1 and bad[0][2] == 19
 
 
+def test_proof_draws_the_exact_ink_on_the_physical_label():
+    m = rz.PANDUIT_S150X225VATY_2UP
+    a = img(450, 225, [(0, 0), (449, 224)])
+    data = rz.job(m, [[a, None]])
+    page = rz.decode_block(rz.parse_blocks(data)[0][1], m)
+    marks = []
+    pr = rz.proof_image(m, page, overlay=lambda d, to_px: marks.append(to_px(0.125, 0.063)))
+    assert pr.size == (m.width_px + 80, m.length_px + 80) and marks == [(40 + 38, 40 + 19)]
+    # the two ink dots of area 0 are back in the physical frame: (38, 19) and (38 + 449, 19 + 224), offset by the margin
+    assert pr.getpixel((40 + 38, 40 + 19)) == (0, 0, 0) and pr.getpixel((40 + 38 + 449, 40 + 19 + 224)) == (
+        0,
+        0,
+        0,
+    )
+    assert pr.getpixel((40 + 38 + 1, 40 + 19 + 1)) == (255, 255, 255)  # label body is white
+
+
 def test_header_and_media_match():
     data = rz.job(M2, [[img(16, 8, []), None]])
     assert rz.header_of(data) == (10, 2, 20)
@@ -137,11 +154,11 @@ def test_render_text_refuses_to_clip_and_ruler_overlays():
     if font is None:
         pytest.skip("no Arial / DejaVu Sans on this machine")
     m = rz.PANDUIT_S150X225VATY_2UP
-    im = rz.render_text((450, 225), ["PP.EXAMPLE:1.ROOM.R6202/A.U31.S1.A1"] * 6, font, 22)
+    im = rz.render_text((450, 225), ["PP.EXAMPLE:1.ROOM.R0101/A.U31.S1.A1"] * 6, font, 22)
     assert im.size == (450, 225) and im.getextrema() == (0, 255)
     with pytest.raises(ValueError):
-        rz.render_text((100, 225), ["PP.EXAMPLE:1.ROOM.R6202/A.U31.S1.A1"], font, 22)
-    small = rz.render_text((300, 40), ["PP.EXAMPLE:1.ROOM.R6202/A.U31.S1.A1"], font, 22, fit=True)
+        rz.render_text((100, 225), ["PP.EXAMPLE:1.ROOM.R0101/A.U31.S1.A1"], font, 22)
+    small = rz.render_text((300, 40), ["PP.EXAMPLE:1.ROOM.R0101/A.U31.S1.A1"], font, 22, fit=True)
     assert small.size == (300, 40) and small.getextrema() == (0, 255)
     up = rz.render_text((60, 24), ["A"], font, 14, align="left", margin=2)
     down = rz.render_text((60, 24), ["A"], font, 14, align="left", margin=2, rotate180=True)

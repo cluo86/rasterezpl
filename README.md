@@ -33,7 +33,7 @@ pip install "rasterezpl[usb]"     # + pyusb for --to usb: (needs libusb: brew in
 rasterezpl usb                                   # find it: 195f:0001 Panduit TDP43ME serial 2546…
 rasterezpl status --to usb:TDP43ME               # 00 = ready
 rasterezpl text --media panduit-s150x225vaty-2up --font Arial --pt 5.4 \
-    "dev-a Ethernet9/1\nRack 6202 U2\nPP.SITE:1.ROOM.R6202/A.U31.S1.A1" -o job.ezpl
+    "dev-a Ethernet9/1\nRack 0101 U2\nPP.SITE:1.ROOM.R0101/A.U31.S1.A1" -o job.ezpl
 rasterezpl ruler job.ezpl --to usb:TDP43ME --media panduit-s150x225vaty-2up   # one calibration label
 ```
 

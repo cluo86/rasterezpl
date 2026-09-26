@@ -48,6 +48,8 @@ class Media:
     stop_mm: int | None = None  # ^E 0–40; None = not sent
     rotate180: bool = True  # physical frame → printer frame (see the module docstring)
     areas_in: tuple[tuple[float, float, float, float], ...] = field(default_factory=tuple)
+    # the physical LABELS (die-cut outline) per print area, same frame and units — for proofs; () = unknown
+    labels_in: tuple[tuple[float, float, float, float], ...] = field(default_factory=tuple)
 
     def dots(self, inches: float) -> int:
         return round(inches * self.dpi)
@@ -89,6 +91,7 @@ class Media:
             stop_mm=self.stop_mm,
             rotate180=False,
             areas_in=((0.0, 0.0, self.width_px / self.dpi, self.length_px / self.dpi),),
+            labels_in=self.labels_in,
         )
 
 

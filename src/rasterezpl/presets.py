@@ -19,6 +19,11 @@ PANDUIT_S150X225VATY_2UP = Media(
         (0.125, 0.063, 1.5, 0.75),
         (0.125 + 1.5, 0.063, 1.5, 0.75),
     ),
+    # the die-cut labels: 1.5 × 2.25 in each, the print-on area at the leading end, clear laminate below it
+    labels_in=(
+        (0.125, 0.0, 1.5, 2.25),
+        (0.125 + 1.5, 0.0, 1.5, 2.25),
+    ),
 )
 
 # the same stock on a 203 dpi head (a Godex G500 carrying Panduit labels): identical inches, coarser dots
@@ -29,6 +34,7 @@ PANDUIT_S150X225VATY_2UP_203 = Media(
     length_mm=PANDUIT_S150X225VATY_2UP.length_mm,
     gap_mm=PANDUIT_S150X225VATY_2UP.gap_mm,
     areas_in=PANDUIT_S150X225VATY_2UP.areas_in,
+    labels_in=PANDUIT_S150X225VATY_2UP.labels_in,
 )
 
 PRESETS: dict[str, Media] = {
