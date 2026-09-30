@@ -56,12 +56,23 @@ def rasterize_svg(data: bytes, width_px: int):
     raise ValueError("an SVG needs a renderer: pip install cairosvg, or install librsvg (rsvg-convert)")
 
 
+def _is_path(s: str) -> bool:
+    """A string names a file only if it is short enough to be one and exists — a base64 blob is neither (and
+    on Linux `Path(blob).exists()` raises 'File name too long')."""
+    if len(s) > 1024 or "\n" in s:
+        return False
+    try:
+        return Path(s).exists()
+    except OSError:
+        return False
+
+
 def load_image(source: bytes | str | Path, width_px: int = 1200):
     """PNG / JPEG / SVG from bytes, a base64 string (optionally a data: URL) or a path → a Pillow 'L' image on
     white (transparency composited away). `width_px` is the raster width used for an SVG."""
     from PIL import Image
 
-    if isinstance(source, str) and not Path(source).exists():
+    if isinstance(source, str) and not _is_path(source):
         s = source.split(",", 1)[1] if source.startswith("data:") else source
         try:
             data = base64.b64decode(s, validate=False)
