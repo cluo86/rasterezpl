@@ -1,6 +1,7 @@
 """Compose label jobs from typed text, pasted rows or an Easy-Mark project — the front end's own input, beyond
 job files something else generated. A `layout` (rasterezpl.layouts) draws a decoration around the text: framed,
-banner, sidebar, corners, ticket — or plain.
+banner, sidebar, corners, ticket — or plain; the picture layouts take an image, the QR layouts (badge, qr-left,
+qr) encode `qr`, a template filled per label like the text ({n}, or {column} with rows input).
 
 A job is composed from a SPEC: the media, the face and size, alignment, copies, and the labels themselves as
 lines of text. ``compose`` renders it with the same ``render_text`` the CLI uses and writes a ``.ezpl`` under
@@ -56,14 +57,26 @@ class Spec:
         None  # a picture for the logo / logo-top / image layouts: base64 (or data: URL) of a PNG, JPEG or SVG
     )
     image_mode: str = "dither"  # dither | threshold (rasterezpl.images)
+    qr: str | None = None  # what the QR layouts encode: a template — {n} (and {column} with rows input)
+    qrs: list[str] = field(
+        default_factory=list
+    )  # the per-label QR data, parallel to `labels` (filled by from_dict)
 
     @classmethod
     def from_dict(cls, d: dict) -> Spec:
         labels = d.get("labels")
+        qr_tpl = str(d.get("qr") or "") or None
+        qrs: list[str] = [str(x) for x in (d.get("qrs") or [])]
         if labels is None and d.get("text") is not None:
             labels = parse_text(str(d["text"]))
+            if qr_tpl and not qrs:
+                qrs = [qr_tpl] * len(labels)  # {n} is filled at expand time
         if labels is None and d.get("rows") is not None:
             labels = parse_rows(str(d["rows"]), str(d.get("template", "")))
+            if qr_tpl and not qrs:
+                qrs = parse_rows(str(d["rows"]), qr_tpl)
+        if labels is None and qr_tpl and not qrs:  # a QR alone, no text
+            labels, qrs = [""], [qr_tpl]
         return cls(
             media=str(d.get("media", "")),
             font=str(d.get("font", "")),
@@ -79,6 +92,8 @@ class Spec:
             layout=str(d.get("layout") or "plain"),
             image=(str(d["image"]) if d.get("image") else None),
             image_mode=str(d.get("image_mode") or "dither"),
+            qr=qr_tpl,
+            qrs=qrs,
         )
 
 
@@ -118,7 +133,7 @@ def parse_rows(rows: str, template: str) -> list[str]:
 
 
 def expand(labels: list[str], copies: int = 1, start: int = 1) -> list[str]:
-    """{n} → the running number per label, then `copies` of each."""
+    """{n} → the running number per label, then `copies` of each (also used for the per-label QR data)."""
     out = []
     for i, lab in enumerate(labels):
         text = lab.replace("{n}", str(start + i))
@@ -160,9 +175,12 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
         )
     if not spec.pt or spec.pt <= 0:
         raise ValueError("pt must be a positive size")
-    texts = expand(spec.labels or ([""] if spec.layout == "image" else []), spec.copies, spec.start)
+    texts = expand(spec.labels or ([""] if spec.layout in ("image", "qr") else []), spec.copies, spec.start)
     if not texts:
         raise ValueError("no label text")
+    qrs = expand(spec.qrs or ([spec.qr] * len(spec.labels) if spec.qr else []), spec.copies, spec.start)
+    if qrs and len(qrs) != len(texts):
+        raise ValueError(f"{len(qrs)} QR data for {len(texts)} labels")
     per = m.labels_per_block
     if spec.area is not None and not 0 <= spec.area < per:
         raise ValueError(f"area {spec.area} is not one of this media's {per} print area(s)")
@@ -175,10 +193,21 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
             raise ValueError(f"image_mode {spec.image_mode!r}: one of {', '.join(MODES)}")
         picture = load_image(spec.image, width_px=max(m.area_px(spec.area or 0)[2] * 2, 600))
     imgs = []
-    for t in texts:
+    for i, t in enumerate(texts):
         k = spec.area or 0
         _, _, aw, ah = m.area_px(k)
-        im = render_label(aw, ah, t.split("\n"), font, px, spec.layout, spec.align, spec.fit, image=picture)
+        im = render_label(
+            aw,
+            ah,
+            t.split("\n"),
+            font,
+            px,
+            spec.layout,
+            spec.align,
+            spec.fit,
+            image=picture,
+            qr=qrs[i] if qrs else None,
+        )
         if spec.rotate180:
             im = im.rotate(180)
         imgs.append(im)
@@ -205,6 +234,7 @@ def compose(root: Path, reg: Registry, spec: Spec) -> dict:
     side = {
         **asdict(spec),
         "image": (f"<{len(spec.image)} chars of image data>" if spec.image else None),
+        "qr_data": expand(spec.qrs, spec.copies, spec.start) if spec.qrs else None,
         "font_path": font,
         "texts": texts,
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),

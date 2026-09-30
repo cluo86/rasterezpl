@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 — 2026-09-30
+
+- QR codes (`images.qr_image`, segno): layouts `badge` (code across the top, lines below — check-in badges),
+  `qr-left`, `qr`; the composer's `qr` template filled per label (`{n}`, `{column}` with rows) or `qrs`; a QR
+  input on the page; the demo's template sheet shows them.
+
 ## 0.6.0 — 2026-09-30
 
 - Pictures on labels (`rasterezpl.images`): PNG / JPEG, or SVG via `cairosvg` (extra `svg`) or `rsvg-convert`;

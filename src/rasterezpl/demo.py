@@ -61,7 +61,8 @@ What is here
   text/welcome.ezpl        four text labels on the Panduit two-across stock (Arial or DejaVu Sans)
   text/flags.ezpl          three tags on the 92 x 34 mm flag media
   templates/layouts.ezpl   every layout — framed, banner, sidebar, corners, ticket, plain, and the picture
-                           layouts logo / logo-top / image with the placeholder mark — each with its sample
+                           layouts logo / logo-top / image with the placeholder mark, the QR layouts badge / qr-left /
+                           qr with a sample code — each with its sample
                            text, set in the bundled faces Inter, Inter Bold, JetBrains Mono, Bebas Neue
   images/placeholder-logo.png   the stand-in mark; put your own PNG / SVG on a label from the page
   patterns/checker.ezpl    a 16-dot checkerboard filling both print areas — dot-exact geometry check
@@ -174,6 +175,9 @@ def build(root: Path) -> dict:
         "logo": "Inter Bold",
         "logo-top": "Bebas Neue",
         "image": "Inter",
+        "badge": "Inter Bold",
+        "qr-left": "JetBrains Mono",
+        "qr": "Inter",
     }
     _, _, aw, ah = pand.area_px(0)
     mark = placeholder_logo()
@@ -193,8 +197,9 @@ def build(root: Path) -> dict:
                 fpath,
                 pt_to_px(7 if big else 5.4, pand.dpi),
                 lay.name,
-                align="left" if lay.name in ("sidebar", "logo") else "center",
+                align="left" if lay.name in ("sidebar", "logo", "qr-left") else "center",
                 image=mark if lay.needs_image else None,
+                qr="C3000071A605" if lay.needs_qr else None,
             )
         )
     (root / "templates" / "layouts.ezpl").write_bytes(

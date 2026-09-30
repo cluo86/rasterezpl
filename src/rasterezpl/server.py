@@ -178,7 +178,18 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/layouts":
             from .layouts import LAYOUTS
 
-            return self._json([{"name": lay.name, "sample": lay.sample} for lay in LAYOUTS.values()])
+            return self._json(
+                [
+                    {
+                        "name": lay.name,
+                        "sample": lay.sample,
+                        "needs_image": lay.needs_image,
+                        "needs_qr": lay.needs_qr,
+                        "qr_sample": "C3000071A605" if lay.needs_qr else None,
+                    }
+                    for lay in LAYOUTS.values()
+                ]
+            )
         if path == "/api/files":
             return self._json(list_files(self.root, self.reg))
         if path == "/api/proof":

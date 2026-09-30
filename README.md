@@ -95,6 +95,8 @@ serve the same root with your own registry — `rasterezpl serve --root <demo di
 
 ![the picture layouts with the placeholder mark: an asset tag with the logo left, and the logo across the top](docs/demo-asset-tag.png)
 
+![the QR layouts: a code with the lines beside it, and a code alone](docs/demo-qr.png)
+
 ## Print from the browser
 
 ```
@@ -129,6 +131,10 @@ Pictures print too: a PNG or JPEG, or an SVG when the machine has `cairosvg` or 
 turned into the head's one-bit image (dithered, or thresholded for a two-tone mark). Three layouts take one:
 `logo` (picture left, text beside — asset tags), `logo-top`, and `image` alone. The demo draws a placeholder
 mark; put your own logo on a label from the page and it never leaves your machine.
+
+QR codes are built in (segno, pure Python): the `badge` layout puts a code across the top and the lines below —
+a check-in badge from a CSV of names and ids is one compose, `qr` set to `{id}` — with `qr-left` for narrow
+stock and `qr` for the code alone.
 
 
 The page composes jobs too: type labels (one per block, `{n}` = running number), paste rows with a header and a

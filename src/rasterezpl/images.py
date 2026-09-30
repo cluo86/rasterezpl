@@ -138,3 +138,30 @@ def placeholder_logo(size: int = 480):
     ]
     d.polygon(tri, fill=0)
     return im
+
+
+def qr_image(text: str, box_px: int, error: str = "m", border: int = 2):
+    """A QR code for `text` as a one-bit Pillow 'L' image, the largest whole-module scale that fits `box_px`
+    square (standard QR, never Micro; error level L/M/Q/H, default M; `border` = quiet zone in modules)."""
+    import segno
+    from PIL import Image
+
+    if not text:
+        raise ValueError("qr: nothing to encode")
+    q = segno.make(text, error=error, micro=False)
+    n = int(q.symbol_size(scale=1, border=0)[0])
+    scale = box_px // (n + 2 * border)
+    if scale < 1:
+        raise ValueError(f"qr: {n} modules do not fit {box_px} dots even at one dot per module")
+    side = (n + 2 * border) * scale
+    im = Image.new("L", (side, side), 255)
+    px = im.load()
+    assert px is not None
+    for y, row in enumerate(q.matrix):
+        for x, dark in enumerate(row):
+            if dark:
+                x0, y0 = (x + border) * scale, (y + border) * scale
+                for yy in range(y0, y0 + scale):
+                    for xx in range(x0, x0 + scale):
+                        px[xx, yy] = 0
+    return im

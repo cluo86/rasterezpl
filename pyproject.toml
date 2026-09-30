@@ -1,6 +1,6 @@
 [project]
 name = "rasterezpl"
-version = "0.6.0"
+version = "0.7.0"
 description = "Print any bitmap to Godex-language (EZPL) thermal label printers — Godex, Panduit TDP series — from macOS or Linux, no driver"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "pillow>=10",
     "pyyaml>=6.0",
+    "segno>=1.6",
 ]
 
 [project.optional-dependencies]

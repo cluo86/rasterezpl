@@ -32,7 +32,14 @@ def test_every_layout_renders_its_sample_in_every_face():
         for face, path in bundled_fonts().items():
             px = rz.pt_to_px(6 if lay.name in ("banner", "ticket") else 5, m.dpi)
             im = render_label(
-                w, h, lay.sample.split("\n"), path, px, lay.name, image=mark if lay.needs_image else None
+                w,
+                h,
+                lay.sample.split("\n"),
+                path,
+                px,
+                lay.name,
+                image=mark if lay.needs_image else None,
+                qr="C3000071A605" if lay.needs_qr else None,
             )
             assert im.size == (w, h) and im.getextrema() == (0, 255), (lay.name, face)
     # a banner's band is black at the top edge, a plain label is white there
