@@ -1,6 +1,7 @@
 """rasterezpl — print any bitmap to Godex-language (EZPL) label printers, driverless, from macOS or Linux."""
 
 from .calibrate import ruler_job, ruler_page
+from .compose import Spec, compose, import_pemx, parse_rows, parse_text
 from .media import EOL, LEFT_MARGIN_MAX_DOTS, OFFSET_MAX_DOTS, Media, offset_commands, setup_commands
 from .presets import PANDUIT_S150X225VATY_2UP, PANDUIT_S150X225VATY_2UP_203, PRESETS
 from .proof import proof_image
@@ -40,8 +41,10 @@ __all__ = [
     "PANDUIT_S150X225VATY_2UP_203",
     "PRESETS",
     "Media",
+    "Spec",
     "UsbPrinter",
     "bitmap_rows",
+    "compose",
     "blocks_outside_areas",
     "count_labels",
     "decode_block",
@@ -49,6 +52,7 @@ __all__ = [
     "find_font",
     "first_labels",
     "header_of",
+    "import_pemx",
     "job",
     "label_block",
     "make_server",
@@ -59,7 +63,9 @@ __all__ = [
     "matching_media",
     "offset_commands",
     "parse_blocks",
+    "parse_rows",
     "parse_selection",
+    "parse_text",
     "pattern_blocks",
     "proof_image",
     "pt_to_px",

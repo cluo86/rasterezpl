@@ -19,6 +19,13 @@ it too (same origin; ``/api/`` also answers CORS preflights for a page served el
                                            while ANY row is refused (fix the cart, not half of it); every send is
                                            appended to the log (JSON lines)
     GET  /api/log?n=50                     the last n log entries
+    GET  /api/fonts                        faces this machine can print (known candidates that resolve + <root>/fonts)
+    GET  /api/media                        the registry's media (dpi, size, print areas)
+    POST /api/compose  {spec…, "preview":true?}
+                                           typed text / pasted rows → a job: saved under <root>/composed/ with a
+                                           .json sidecar (the spec), or with "preview" the PNG proof of row 1 only
+    GET  /api/spec?file=composed/x.json    a composed job's spec, to reload the form
+    POST /api/import   {"pemx": <base64>}  an Easy-Mark .pemx → its label texts + point size + part name
 
 Guards are the CLI's: a file prints only on a printer holding the media it was written for, and only if every
 block lies inside that media's print areas. Paths are confined to the root. The server binds 127.0.0.1 unless
@@ -40,6 +47,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from .compose import Spec, compose, fonts_available, import_pemx, preview_png, read_spec
 from .registry import Registry, load
 from .stream import (
     blocks_outside_areas,
@@ -245,6 +253,18 @@ img.proof{max-width:520px;border:1px solid #999}#note{white-space:pre-wrap;font-
 <h1>rasterezpl — print from the browser</h1>
 <div class=muted>Job files under the served root, the printers on record, a cart, one print. The plan is shown before anything is sent; a refused row stops the whole cart.</div>
 <div id=cart></div>
+<h2>Compose — your own labels</h2>
+<div class=muted>Type labels (one per block, blank line between; <code>{n}</code> = running number), or paste rows with a header and a template, or open an Easy-Mark <code>.pemx</code>. Preview is the exact print; compose saves a job file under <code>composed/</code> and puts it in the cart.</div>
+<table><tr><td>
+ media <select id=c_media></select> font <select id=c_font></select> pt <input type=text id=c_pt size=4 value="5.4"> align <select id=c_align><option>center</option><option>left</option></select>
+ <label><input type=checkbox id=c_fit> fit</label> copies <input type=text id=c_copies size=2 value="1"> start <input type=text id=c_start size=3 value="1"> name <input type=text id=c_name size=16 value="labels"><br>
+ <textarea id=c_text rows=8 cols=60 placeholder="line 1&#10;line 2&#10;&#10;next label…"></textarea><br>
+ <details><summary class=muted>rows + template instead of text</summary>
+ template <input type=text id=c_tpl size=40 placeholder="{device} {port}\nRack {rack} U{u}"><br>
+ <textarea id=c_rows rows=5 cols=60 placeholder="device&#9;port&#9;rack&#9;u&#10;sw1&#9;Eth1/1&#9;6222&#9;1"></textarea></details>
+ <div>Easy-Mark project: <input type=file id=c_pemx accept=".pemx,.zip"> <span id=c_pemxnote class=muted></span></div>
+ <button onclick="cPreview()">preview</button> <button class=big onclick="cCompose()">compose → cart</button> <span id=c_note></span>
+</td><td><img id=c_img class=proof></td></tr></table>
 <h2>Printers</h2><table><thead><tr><th>name</th><th>transport</th><th>media</th><th>offset (in)</th><th>note</th><th>status</th></tr></thead><tbody id=printers></tbody></table>
 <h2>Files</h2><div class=muted>filter <input type=text id=filter size=30 placeholder="part of a path"> · labels as in a print dialog: <code>1-4,7</code>, empty = all</div>
 <table><thead><tr><th>file</th><th>labels</th><th>media / printers</th><th>select</th><th>proof</th></tr></thead><tbody id=files></tbody></table>
@@ -271,8 +291,13 @@ function planTable(rows){return `<table><tr><th>file</th><th>labels</th><th>coun
 async function doPlan(){try{const j=await api("/api/plan",{jobs:CART});PLAN=j.plan;const ok=!PLAN.some(r=>r.refused);const n=PLAN.reduce((a,r)=>a+r.count,0);$("plan").innerHTML=planTable(PLAN)+`<div class="${ok?"ok":"bad"}">${ok?`${n} labels ready — press print`:"fix the refused rows"}</div>`;$("printbtn").disabled=!ok;$("printbtn").textContent=ok?`print ${n} labels`:"print"}catch(e){$("plan").innerHTML=`<div class=bad>${esc(e.message)}</div>`}}
 async function doPrint(){if(!PLAN)return;$("printbtn").disabled=true;$("note").textContent="sending…";try{const j=await api("/api/print",{jobs:CART});$("note").textContent=j.notes.join("\n");if(j.sent){CART=[];saveCart();loadLog();setTimeout(renderCart,4000)}}catch(e){$("note").textContent=e.message;$("note").className="bad"}}
 async function loadLog(){const j=await api("/api/log?n=20");$("log").innerHTML=j.length?`<table>${j.slice().reverse().map(e=>`<tr><td>${esc(e.ts)}</td><td><code>${esc(e.file)}</code></td><td>${esc(e.labels)} (${e.count})</td><td>${esc(e.printer)}</td><td>${esc(e.note)}</td></tr>`).join("")}</table>`:"nothing printed yet"}
+function cSpec(){const rows=$("c_rows").value.trim();const d={media:$("c_media").value,font:$("c_font").value,pt:parseFloat($("c_pt").value),align:$("c_align").value,fit:$("c_fit").checked,copies:parseInt($("c_copies").value||"1",10),start:parseInt($("c_start").value||"1",10),name:$("c_name").value};if(rows){d.rows=rows;d.template=$("c_tpl").value}else{d.text=$("c_text").value}return d}
+async function cPreview(){$("c_note").textContent="";try{const r=await fetch("/api/compose",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...cSpec(),preview:true})});if(!r.ok){const j=await r.json();throw new Error(j.error)}$("c_img").src=URL.createObjectURL(await r.blob())}catch(e){$("c_note").textContent=e.message;$("c_note").className="bad"}}
+async function cCompose(){$("c_note").textContent="";try{const j=await api("/api/compose",cSpec());$("c_note").innerHTML=`<span class=ok>${j.labels} labels → <code>${esc(j.file)}</code></span>`;await loadFiles();CART.push({file:j.file,labels:""});saveCart();renderCart()}catch(e){$("c_note").textContent=e.message;$("c_note").className="bad"}}
+async function loadCompose(){const [fonts,media]=await Promise.all([api("/api/fonts"),api("/api/media")]);$("c_font").innerHTML=fonts.map(f=>`<option value="${esc(f.name)}">${esc(f.name)}</option>`).join("")||"<option value=''>no face found</option>";$("c_media").innerHTML=media.map(m=>`<option value="${esc(m.name)}">${esc(m.name)}${m.printers.length?" — "+m.printers.join(", "):""}</option>`).join("")}
+$("c_pemx").onchange=async ev=>{const f=ev.target.files[0];if(!f)return;const buf=await f.arrayBuffer();const b64=btoa(String.fromCharCode(...new Uint8Array(buf)));try{const j=await api("/api/import",{pemx:b64});$("c_text").value=j.texts.join("\n\n");if(j.pt)$("c_pt").value=j.pt;$("c_name").value=f.name.replace(/\.pemx$/i,"");$("c_pemxnote").textContent=`${j.labels} labels from the project${j.part?" (stock "+j.part+")":""} — pick the media, preview, compose`}catch(e){$("c_pemxnote").textContent=e.message;$("c_pemxnote").className="bad"}};
 $("filter").oninput=renderFiles;
-loadPrinters();loadFiles();renderCart();loadLog();
+loadPrinters();loadFiles();renderCart();loadLog();loadCompose();
 </script></body></html>
 """
 
@@ -374,6 +399,25 @@ class Handler(SimpleHTTPRequestHandler):
             if u.path == "/api/log":
                 n = int((parse_qs(u.query).get("n") or ["50"])[0])
                 return self._json(read_log(self.log_path, n))
+            if u.path == "/api/fonts":
+                return self._json(fonts_available(self.root))
+            if u.path == "/api/media":
+                return self._json(
+                    [
+                        {
+                            "name": n,
+                            "dpi": m.dpi,
+                            "width_mm": m.width_mm,
+                            "length_mm": m.length_mm,
+                            "areas": len(m.areas_in),
+                            "printers": [pr.name for pr in self.reg.printers.values() if pr.media_name == n],
+                        }
+                        for n, m in self.reg.media.items()
+                    ]
+                )
+            if u.path == "/api/spec":
+                rel = (parse_qs(u.query).get("file") or [""])[0]
+                return self._json(read_spec(self.root, rel))
             if u.path.startswith("/api/"):
                 return self._json({"error": f"no such endpoint {u.path}"}, 404)
         except ValueError as e:
@@ -384,6 +428,18 @@ class Handler(SimpleHTTPRequestHandler):
         u = urlsplit(self.path)
         try:
             doc = self._body()
+            if u.path == "/api/compose":
+                spec = Spec.from_dict(doc)
+                if doc.get("preview"):
+                    return self._bytes(
+                        preview_png(self.reg, spec, self.root, int(doc.get("block", 1) or 1)), "image/png"
+                    )
+                return self._json(compose(self.root, self.reg, spec))
+            if u.path == "/api/import":
+                import base64
+
+                raw = base64.b64decode(str(doc.get("pemx", "")))
+                return self._json(import_pemx(raw))
             jobs = doc.get("jobs")
             if not isinstance(jobs, list) or not jobs:
                 return self._json({"error": "jobs: a non-empty list of {file, labels, printer?}"}, 400)

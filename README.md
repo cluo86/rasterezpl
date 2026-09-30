@@ -96,6 +96,14 @@ POST /api/plan   {"jobs":[{"file":"a/b.ezpl","labels":"1-4,7","printer":"tdp43me
 POST /api/print  {"jobs":[…],"dry_run":false}
 ```
 
+### Your own labels
+
+The page composes jobs too: type labels (one per block, `{n}` = running number), paste rows with a header and a
+template like `{device} {port}\nRack {rack} U{u}`, or open an Easy-Mark `.pemx` project (its series data are the
+texts). Pick the media and a face the server machine has, preview the exact print, compose → the job lands under
+`<root>/composed/` with a `.json` sidecar (the spec, reloadable) and in the cart. No silent font substitution: a
+face that is not on the machine is a refusal.
+
 ## Library
 
 ```python
