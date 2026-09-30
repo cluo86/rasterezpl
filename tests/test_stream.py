@@ -154,11 +154,11 @@ def test_render_text_refuses_to_clip_and_ruler_overlays():
     if font is None:
         pytest.skip("no Arial / DejaVu Sans on this machine")
     m = rz.PANDUIT_S150X225VATY_2UP
-    im = rz.render_text((450, 225), ["PP.EXAMPLE:1.ROOM.R0101/A.U31.S1.A1"] * 6, font, 22)
+    im = rz.render_text((450, 225), ["PP.EXAMPLE:1.RM.R0101/A.U31.S1.A1"] * 6, font, 22)
     assert im.size == (450, 225) and im.getextrema() == (0, 255)
     with pytest.raises(ValueError):
-        rz.render_text((100, 225), ["PP.EXAMPLE:1.ROOM.R0101/A.U31.S1.A1"], font, 22)
-    small = rz.render_text((300, 40), ["PP.EXAMPLE:1.ROOM.R0101/A.U31.S1.A1"], font, 22, fit=True)
+        rz.render_text((100, 225), ["PP.EXAMPLE:1.RM.R0101/A.U31.S1.A1"], font, 22)
+    small = rz.render_text((300, 40), ["PP.EXAMPLE:1.RM.R0101/A.U31.S1.A1"], font, 22, fit=True)
     assert small.size == (300, 40) and small.getextrema() == (0, 255)
     up = rz.render_text((60, 24), ["A"], font, 14, align="left", margin=2)
     down = rz.render_text((60, 24), ["A"], font, 14, align="left", margin=2, rotate180=True)
