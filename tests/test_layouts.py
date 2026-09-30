@@ -25,10 +25,15 @@ def test_bundled_fonts_resolve_by_name():
 def test_every_layout_renders_its_sample_in_every_face():
     m = rz.PANDUIT_S150X225VATY_2UP
     _, _, w, h = m.area_px(0)
+    from rasterezpl.images import placeholder_logo
+
+    mark = placeholder_logo()
     for lay in LAYOUTS.values():
         for face, path in bundled_fonts().items():
             px = rz.pt_to_px(6 if lay.name in ("banner", "ticket") else 5, m.dpi)
-            im = render_label(w, h, lay.sample.split("\n"), path, px, lay.name)
+            im = render_label(
+                w, h, lay.sample.split("\n"), path, px, lay.name, image=mark if lay.needs_image else None
+            )
             assert im.size == (w, h) and im.getextrema() == (0, 255), (lay.name, face)
     # a banner's band is black at the top edge, a plain label is white there
     inter = bundled_fonts()["Inter"]

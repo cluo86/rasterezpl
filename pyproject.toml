@@ -1,6 +1,6 @@
 [project]
 name = "rasterezpl"
-version = "0.5.2"
+version = "0.6.0"
 description = "Print any bitmap to Godex-language (EZPL) thermal label printers — Godex, Panduit TDP series — from macOS or Linux, no driver"
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,6 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+svg = ["cairosvg>=2.7"]  # SVG pictures on labels (or install librsvg for rsvg-convert)
 usb = ["pyusb>=1.2"]  # `--to usb:` — writes to the USB printer-class device itself (macOS 26 has no raw CUPS queues)
 dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.8", "types-PyYAML"]
 

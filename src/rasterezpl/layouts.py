@@ -10,6 +10,12 @@ no-clip / fit rules hold inside every layout. Each layout carries a SAMPLE text 
     sidebar   a striped bar down the left edge, the text beside it
     corners   corner marks, like a crop-marked card
     ticket    a dashed rule with a "tear here" gap between the first line and the rest
+    logo      a picture on the left (about 40 % of the width), the text beside it — asset tags
+    logo-top  the picture across the top (about 45 % of the height), the text below
+    image     the picture alone, fitted to the label
+
+The three picture layouts take an ``image`` (a Pillow 'L' image, see :mod:`rasterezpl.images`) and refuse without
+one; the others ignore it.
 """
 
 from __future__ import annotations
@@ -24,7 +30,8 @@ from .text import render_text
 class Layout:
     name: str
     sample: str  # lines joined by "\n"
-    draw: Callable  # (w, h, lines, font, px, align, fit) -> PIL image
+    draw: Callable  # (w, h, lines, font, px, align, fit, image=None) -> PIL image
+    needs_image: bool = False
 
 
 def _canvas(w: int, h: int):
@@ -48,11 +55,11 @@ def _text_into(img, box: tuple[int, int, int, int], lines, font, px, align, fit,
     return img
 
 
-def plain(w, h, lines, font, px, align="center", fit=False):
+def plain(w, h, lines, font, px, align="center", fit=False, image=None):
     return render_text((w, h), lines, font, px, align=align, fit=fit)
 
 
-def framed(w, h, lines, font, px, align="center", fit=False):
+def framed(w, h, lines, font, px, align="center", fit=False, image=None):
     img, d = _canvas(w, h)
     m = max(2, min(w, h) // 30)
     r = max(4, min(w, h) // 12)
@@ -63,7 +70,7 @@ def framed(w, h, lines, font, px, align="center", fit=False):
     return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
 
 
-def banner(w, h, lines, font, px, align="center", fit=False):
+def banner(w, h, lines, font, px, align="center", fit=False, image=None):
     img, d = _canvas(w, h)
     band = int(px * 1.6) + 4
     band = min(band, h // 2)
@@ -74,7 +81,7 @@ def banner(w, h, lines, font, px, align="center", fit=False):
     return _text_into(img, (pad, band + pad, w - 2 * pad, h - band - 2 * pad), rest, font, px, align, fit)
 
 
-def sidebar(w, h, lines, font, px, align="left", fit=False):
+def sidebar(w, h, lines, font, px, align="left", fit=False, image=None):
     img, d = _canvas(w, h)
     bar = max(6, w // 14)
     period = max(4, bar // 2)
@@ -85,7 +92,7 @@ def sidebar(w, h, lines, font, px, align="left", fit=False):
     return _text_into(img, (bar + pad * 2, pad, w - bar - pad * 3, h - 2 * pad), lines, font, px, align, fit)
 
 
-def corners(w, h, lines, font, px, align="center", fit=False):
+def corners(w, h, lines, font, px, align="center", fit=False, image=None):
     img, d = _canvas(w, h)
     L = max(6, min(w, h) // 6)
     t = max(1, min(w, h) // 60)
@@ -96,7 +103,7 @@ def corners(w, h, lines, font, px, align="center", fit=False):
     return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
 
 
-def ticket(w, h, lines, font, px, align="center", fit=False):
+def ticket(w, h, lines, font, px, align="center", fit=False, image=None):
     img, d = _canvas(w, h)
     head, rest = lines[:1], lines[1:]
     top = int(px * 1.5) + 4 if rest else h
@@ -114,6 +121,40 @@ def ticket(w, h, lines, font, px, align="center", fit=False):
     return img
 
 
+def _need(image, name):
+    if image is None:
+        raise ValueError(f"layout {name!r} needs an image (a PNG, JPEG or SVG)")
+    return image
+
+
+def logo(w, h, lines, font, px, align="left", fit=False, image=None):
+    from .images import to_bitmap
+
+    img = _need(image, "logo")
+    out, _ = _canvas(w, h)
+    pad = max(3, min(w, h) // 30)
+    lw = int(w * 0.4)
+    out.paste(to_bitmap(img, lw - 2 * pad, h - 2 * pad), (pad, pad))
+    return _text_into(out, (lw + pad, pad, w - lw - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
+
+
+def logo_top(w, h, lines, font, px, align="center", fit=False, image=None):
+    from .images import to_bitmap
+
+    img = _need(image, "logo-top")
+    out, _ = _canvas(w, h)
+    pad = max(3, min(w, h) // 30)
+    lh = int(h * 0.45)
+    out.paste(to_bitmap(img, w - 2 * pad, lh - pad), (pad, pad))
+    return _text_into(out, (pad, lh + pad, w - 2 * pad, h - lh - 2 * pad), lines, font, px, align, fit)
+
+
+def image_only(w, h, lines, font, px, align="center", fit=False, image=None):
+    from .images import to_bitmap
+
+    return to_bitmap(_need(image, "image"), w, h)
+
+
 LAYOUTS: dict[str, Layout] = {
     "plain": Layout("plain", "rasterezpl\nplain text\nthe default", plain),
     "framed": Layout("framed", "FRAMED\ndouble rule\nrounded corners", framed),
@@ -124,6 +165,9 @@ LAYOUTS: dict[str, Layout] = {
 }
 # banners want a second line under the band in the sample
 LAYOUTS["banner"] = Layout("banner", "PATCH PANEL A\nrack 12 · U31\n24 × LC duplex", banner)
+LAYOUTS["logo"] = Layout("logo", "ASSET 0042\nproperty of ACME\nreturn if found", logo, needs_image=True)
+LAYOUTS["logo-top"] = Layout("logo-top", "ACME\nrack 12 · U31", logo_top, needs_image=True)
+LAYOUTS["image"] = Layout("image", "", image_only, needs_image=True)
 
 
 def render_label(
@@ -135,10 +179,11 @@ def render_label(
     layout: str = "plain",
     align: str = "center",
     fit: bool = False,
+    image=None,
 ):
-    """One label image of (w, h) dots in the named layout."""
+    """One label image of (w, h) dots in the named layout; `image` = a Pillow 'L' image for the picture layouts."""
     try:
         lay = LAYOUTS[layout]
     except KeyError as e:
         raise ValueError(f"unknown layout {layout!r}; one of {', '.join(LAYOUTS)}") from e
-    return lay.draw(w, h, lines, font, px, align, fit)
+    return lay.draw(w, h, lines, font, px, align, fit, image=image)

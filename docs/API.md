@@ -54,7 +54,7 @@ Mono, Bebas Neue; they render the same on every machine), then the known candida
 
 ### `GET /api/layouts`
 The label layouts, each with a sample text: `[{"name": "banner", "sample": "PATCH PANEL A\nrack 12 · U31\n…"}, …]`.
-Layouts: `plain`, `framed`, `banner`, `sidebar`, `corners`, `ticket`.
+Layouts: `plain`, `framed`, `banner`, `sidebar`, `corners`, `ticket`, and with a picture `logo`, `logo-top`, `image`.
 
 ### `GET /api/files`
 Every job under the root.
@@ -115,7 +115,9 @@ A Spec, in one of three input forms:
 | `copies` | copies of each label (default 1) |
 | `start` | the first `{n}` (default 1) |
 | `rotate180` | turn the print on the label (default false) |
-| `layout` | a decoration around the text: `plain` (default), `framed`, `banner`, `sidebar`, `corners`, `ticket` (`/api/layouts`) |
+| `layout` | a decoration around the text: `plain` (default), `framed`, `banner`, `sidebar`, `corners`, `ticket`; with a picture: `logo`, `logo-top`, `image` (`/api/layouts`) |
+| `image` | base64 (or a `data:` URL) of a PNG, JPEG or SVG for the picture layouts; an SVG needs `cairosvg` or `rsvg-convert` on the server |
+| `image_mode` | `dither` (default, greys as a halftone) or `threshold` (only what is darker than mid-grey) |
 | `area` | a single print area on multi-up media (default: fill areas in order) |
 | `preview` | `true` → the response is `image/png`, the proof of `block` (default 1), and nothing is saved |
 

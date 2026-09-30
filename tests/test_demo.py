@@ -28,7 +28,7 @@ def test_demo_root_and_pipeline(tmp_path, capsys):
         files["patterns/checker.ezpl"]["printers"] == ["demo-panduit"]
         and files["patterns/checker.ezpl"]["labels"] == 2
     )
-    rows = plan(root, reg, [{"file": f} for f in info["written"]])
+    rows = plan(root, reg, [{"file": f} for f in info["written"] if f.endswith(".ezpl")])
     assert all(r.ok for r in rows), [r.refused for r in rows]
     # patterns: the checkerboard has ink and both areas are used
     data = (root / "patterns" / "checker.ezpl").read_bytes()

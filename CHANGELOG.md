@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-09-30
+
+- Pictures on labels (`rasterezpl.images`): PNG / JPEG, or SVG via `cairosvg` (extra `svg`) or `rsvg-convert`;
+  fitted and made one-bit by dither or threshold. Layouts `logo` (picture left, text beside), `logo-top`,
+  `image`; the composer's `image` / `image_mode` fields; a picture input on the page. The demo draws a
+  placeholder mark and shows the asset-tag layouts with it.
+
 ## 0.5.2 — 2026-09-30
 
 - `status` on a file-spool printer answers `00 file spool (writable)` instead of raising; an lp: queue says it

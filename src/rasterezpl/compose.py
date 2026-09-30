@@ -52,6 +52,10 @@ class Spec:
     rotate180: bool = False
     area: int | None = None  # a single print area on multi-up media (default: fill areas in order)
     layout: str = "plain"  # a decoration around the text (rasterezpl.layouts)
+    image: str | None = (
+        None  # a picture for the logo / logo-top / image layouts: base64 (or data: URL) of a PNG, JPEG or SVG
+    )
+    image_mode: str = "dither"  # dither | threshold (rasterezpl.images)
 
     @classmethod
     def from_dict(cls, d: dict) -> Spec:
@@ -73,6 +77,8 @@ class Spec:
             rotate180=bool(d.get("rotate180", False)),
             area=None if d.get("area") in (None, "") else int(d["area"]),
             layout=str(d.get("layout") or "plain"),
+            image=(str(d["image"]) if d.get("image") else None),
+            image_mode=str(d.get("image_mode") or "dither"),
         )
 
 
@@ -154,18 +160,25 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
         )
     if not spec.pt or spec.pt <= 0:
         raise ValueError("pt must be a positive size")
-    texts = expand(spec.labels, spec.copies, spec.start)
+    texts = expand(spec.labels or ([""] if spec.layout == "image" else []), spec.copies, spec.start)
     if not texts:
         raise ValueError("no label text")
     per = m.labels_per_block
     if spec.area is not None and not 0 <= spec.area < per:
         raise ValueError(f"area {spec.area} is not one of this media's {per} print area(s)")
     px = pt_to_px(spec.pt, m.dpi)
+    picture = None
+    if spec.image:
+        from .images import MODES, load_image
+
+        if spec.image_mode not in MODES:
+            raise ValueError(f"image_mode {spec.image_mode!r}: one of {', '.join(MODES)}")
+        picture = load_image(spec.image, width_px=max(m.area_px(spec.area or 0)[2] * 2, 600))
     imgs = []
     for t in texts:
         k = spec.area or 0
         _, _, aw, ah = m.area_px(k)
-        im = render_label(aw, ah, t.split("\n"), font, px, spec.layout, spec.align, spec.fit)
+        im = render_label(aw, ah, t.split("\n"), font, px, spec.layout, spec.align, spec.fit, image=picture)
         if spec.rotate180:
             im = im.rotate(180)
         imgs.append(im)
@@ -191,6 +204,7 @@ def compose(root: Path, reg: Registry, spec: Spec) -> dict:
     out.write_bytes(data)
     side = {
         **asdict(spec),
+        "image": (f"<{len(spec.image)} chars of image data>" if spec.image else None),
         "font_path": font,
         "texts": texts,
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),

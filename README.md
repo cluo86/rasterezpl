@@ -93,6 +93,8 @@ serve the same root with your own registry — `rasterezpl serve --root <demo di
 
 ![two layouts from the template sheet: a banner in Bebas Neue, a sidebar in JetBrains Mono](docs/demo-layouts.png)
 
+![the picture layouts with the placeholder mark: an asset tag with the logo left, and the logo across the top](docs/demo-asset-tag.png)
+
 ## Print from the browser
 
 ```
@@ -122,6 +124,11 @@ Four faces ship with the package under the SIL Open Font License — Inter, Inte
 Neue — so a label composed on one machine renders identically on another. Six layouts decorate the text:
 `framed`, `banner` (first line white on black), `sidebar`, `corners`, `ticket`, and `plain`; each has a sample
 the page fills in with one click, and the demo root shows them all in `templates/layouts.ezpl`.
+
+Pictures print too: a PNG or JPEG, or an SVG when the machine has `cairosvg` or `rsvg-convert`, fitted and
+turned into the head's one-bit image (dithered, or thresholded for a two-tone mark). Three layouts take one:
+`logo` (picture left, text beside — asset tags), `logo-top`, and `image` alone. The demo draws a placeholder
+mark; put your own logo on a label from the page and it never leaves your machine.
 
 
 The page composes jobs too: type labels (one per block, `{n}` = running number), paste rows with a header and a

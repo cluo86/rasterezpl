@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .images import placeholder_logo
 from .layouts import LAYOUTS, render_label
 from .presets import PANDUIT_S150X225VATY_2UP
 from .registry import load
@@ -59,8 +60,10 @@ log the front end keeps. Try, from this directory:
 What is here
   text/welcome.ezpl        four text labels on the Panduit two-across stock (Arial or DejaVu Sans)
   text/flags.ezpl          three tags on the 92 x 34 mm flag media
-  templates/layouts.ezpl   every layout (framed, banner, sidebar, corners, ticket, plain) with its sample text,
-                           set in the bundled faces Inter, Inter Bold, JetBrains Mono, Bebas Neue
+  templates/layouts.ezpl   every layout — framed, banner, sidebar, corners, ticket, plain, and the picture
+                           layouts logo / logo-top / image with the placeholder mark — each with its sample
+                           text, set in the bundled faces Inter, Inter Bold, JetBrains Mono, Bebas Neue
+  images/placeholder-logo.png   the stand-in mark; put your own PNG / SVG on a label from the page
   patterns/checker.ezpl    a 16-dot checkerboard filling both print areas — dot-exact geometry check
   patterns/stripes.ezpl    diagonal stripes, 1 dot wide, 8 apart — a head/ribbon check
   patterns/gradient.ezpl   an ordered-dither gradient — darkness and speed settings
@@ -125,7 +128,7 @@ def _gradient(w: int, h: int):
 def build(root: Path) -> dict:
     """Write the demo root. Returns what was written and what was skipped (no font → no text jobs)."""
     root = root.resolve()
-    for d in ("text", "patterns", "templates", "spool"):
+    for d in ("text", "patterns", "templates", "images", "spool"):
         (root / d).mkdir(parents=True, exist_ok=True)
     (root / "printers.yaml").write_text(REGISTRY_YAML.format(root=root.as_posix()), encoding="utf-8")
     (root / "README.txt").write_text(README_TXT, encoding="utf-8")
@@ -168,8 +171,16 @@ def build(root: Path) -> dict:
         "sidebar": "JetBrains Mono",
         "corners": "Inter Bold",
         "ticket": "Bebas Neue",
+        "logo": "Inter Bold",
+        "logo-top": "Bebas Neue",
+        "image": "Inter",
     }
     _, _, aw, ah = pand.area_px(0)
+    mark = placeholder_logo()
+    mark.save(
+        root / "images" / "placeholder-logo.png"
+    )  # stand-in for a company logo — drop your own beside it
+    written.append("images/placeholder-logo.png")
     tpl_imgs = []
     for lay in LAYOUTS.values():
         fpath = faces[face_for.get(lay.name, "Inter")]
@@ -182,7 +193,8 @@ def build(root: Path) -> dict:
                 fpath,
                 pt_to_px(7 if big else 5.4, pand.dpi),
                 lay.name,
-                align="left" if lay.name == "sidebar" else "center",
+                align="left" if lay.name in ("sidebar", "logo") else "center",
+                image=mark if lay.needs_image else None,
             )
         )
     (root / "templates" / "layouts.ezpl").write_bytes(
