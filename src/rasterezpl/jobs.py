@@ -86,6 +86,15 @@ def parse_cart(entries: list[str]) -> list[dict]:
     return out
 
 
+def written_for(data: bytes, reg: Registry) -> tuple[list[str], list[str]]:
+    """(fits, header_only): media the job matches by header AND whose print areas contain every block, and
+    media that match the header only — the same stock at another dpi places its blocks elsewhere, so a job
+    for the 203 dpi variant is not a job for the 300 dpi one."""
+    names = matching_media(data, reg.media)
+    fits = [n for n in names if not blocks_outside_areas(data, reg.media[n])]
+    return fits, [n for n in names if n not in fits]
+
+
 def list_files(root: Path, reg: Registry) -> list[dict]:
     """Every ``.ezpl`` under the root: size, blocks, labels, the media it matches and the printers holding it."""
     out = []
@@ -94,16 +103,20 @@ def list_files(root: Path, reg: Registry) -> list[dict]:
         data = p.read_bytes()
         row: dict = {"file": rel, "bytes": len(data), "blocks": 0, "labels": 0, "media": [], "printers": []}
         try:
-            names = matching_media(data, reg.media)
+            names, header_only = written_for(data, reg)
         except ValueError as e:
             row["error"] = str(e)
             out.append(row)
             continue
-        per = max((reg.media[n].labels_per_block for n in names), default=1)
+        per = max((reg.media[n].labels_per_block for n in names + header_only), default=1)
         row["blocks"] = count_labels(data)
         row["labels"] = row["blocks"] * per
         row["media"] = names
         row["printers"] = [pr.name for pr in reg.printers.values() if pr.media_name in names]
+        if not names and header_only:
+            row["error"] = (
+                f"written for {header_only} at a geometry no media here has (blocks outside the print areas)"
+            )
         out.append(row)
     return out
 
@@ -127,7 +140,7 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
             continue
         data = p.read_bytes()
         try:
-            names = matching_media(data, reg.media)
+            names, header_only = written_for(data, reg)
         except ValueError as e:
             row.refused = str(e)
             continue
@@ -137,14 +150,32 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
                 row.refused = f"unknown printer {given!r}"
                 continue
             if pr.media_name not in names:
+                other = (
+                    f" (same stock at another dpi: this file fits {names})"
+                    if pr.media_name in header_only
+                    else ""
+                )
                 row.refused = (
-                    f"{file} was written for {names or 'no known media'}, {pr.name} holds {pr.media_name}"
+                    f"{file} was written for {names or header_only or 'no known media'}, {pr.name} holds "
+                    f"{pr.media_name}{other}"
                 )
                 continue
         else:
             cands = [pr for pr in reg.printers.values() if pr.media_name in names]
             if not cands:
-                row.refused = f"no printer on record holds {names or 'the media this file was written for'}"
+                held = [
+                    f"{pr.name} holds {pr.media_name}"
+                    for pr in reg.printers.values()
+                    if pr.media_name in header_only
+                ]
+                row.refused = (
+                    f"no printer on record holds {names or header_only or 'the media this file was written for'}"
+                    + (
+                        f" — {'; '.join(held)}: the same stock at another dpi, the blocks would land elsewhere"
+                        if held
+                        else ""
+                    )
+                )
                 continue
             if len(cands) > 1:
                 row.refused = (

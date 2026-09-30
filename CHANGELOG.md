@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 — 2026-09-30
+
+- The planner tells the same stock at two resolutions apart: a job matches a media only if its blocks lie inside
+  that media's print areas, not by the mm header alone. A job composed for the 203 dpi Panduit variant is no
+  longer planned onto the 300 dpi printer and refused for geometry; the refusal names the dpi mismatch, and
+  a printer holding the right variant is chosen when one exists. The page lists media without a printer last,
+  marked.
+- `printcart`: a job file given as `--root` is refused with the command that was meant.
+
 ## 0.5.0 — 2026-09-30
 
 - Bundled faces (SIL OFL, `fonts/LICENSES.md`): Inter, Inter Bold, JetBrains Mono, Bebas Neue — a label renders

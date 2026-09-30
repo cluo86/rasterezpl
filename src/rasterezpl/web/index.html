@@ -149,7 +149,8 @@ async function loadCompose() {
   LAYOUTS = layouts;
   $("c_layout").innerHTML = layouts.map(l => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join("");
   $("c_font").innerHTML = fonts.map(f => `<option value="${esc(f.name)}">${esc(f.name)}${f.bundled ? " (bundled)" : ""}</option>`).join("") || "<option value=''>no face found on this machine</option>";
-  $("c_media").innerHTML = media.map(m => `<option value="${esc(m.name)}">${esc(m.name)}${m.printers.length ? " — " + m.printers.join(", ") : ""}</option>`).join("");
+  const withPrinter = media.filter(m => m.printers.length), without = media.filter(m => !m.printers.length);
+  $("c_media").innerHTML = [...withPrinter, ...without].map(m => `<option value="${esc(m.name)}">${esc(m.name)}${m.printers.length ? " — " + m.printers.join(", ") : " (no printer holds this)"}</option>`).join("");
   $("version").textContent = `rasterezpl ${v.version}`;
 }
 $("c_pemx").onchange = async ev => {

@@ -127,3 +127,44 @@ def test_cli_printcart(site, capsys):
     assert main([*argv1, "a.ezpl:1-2"]) == 0
     assert rz.count_labels(site["t1"].read_bytes()) == 1
     assert (site["root"] / LOG_NAME).exists()
+
+
+def test_same_stock_other_dpi_is_not_the_same_media(tmp_path):
+    """The Panduit stock exists as a 300 dpi and a 203 dpi media with the SAME mm header: a job composed for the
+    203 variant must not be planned onto the 300 dpi printer (its blocks land elsewhere) — the user's 2026-09-30
+    demo case — and is planned onto a 203 printer when one exists."""
+    from rasterezpl.jobs import list_files, written_for
+    from rasterezpl.presets import PANDUIT_S150X225VATY_2UP_203
+
+    reg300 = tmp_path / "r300.yaml"
+    reg300.write_text(
+        f'printers:\n  p300:\n    transport: "{tmp_path / "s300.ezpl"}"\n    media: panduit-s150x225vaty-2up\n'
+    )
+    root = tmp_path / "root"
+    root.mkdir()
+    from PIL import Image
+
+    m203 = PANDUIT_S150X225VATY_2UP_203
+    _, _, aw, ah = m203.area_px(0)
+    ink = Image.new("L", (aw, ah), 0)  # a job with ink: its blocks sit where the 203 dpi areas are
+    (root / "j203.ezpl").write_bytes(rz.job(m203, [[ink, ink]]))
+    r = load(str(reg300))
+    fits, header_only = written_for((root / "j203.ezpl").read_bytes(), r)
+    assert fits == ["panduit-s150x225vaty-2up-203"] and header_only == ["panduit-s150x225vaty-2up"]
+    rows = plan(root, r, [{"file": "j203.ezpl"}])
+    assert (
+        not rows[0].ok
+        and "p300 holds panduit-s150x225vaty-2up" in rows[0].refused
+        and "another dpi" in rows[0].refused
+    )
+    rows = plan(root, r, [{"file": "j203.ezpl", "printer": "p300"}])
+    assert not rows[0].ok and "same stock at another dpi" in rows[0].refused
+    listed = list_files(root, r)[0]  # the file fits the 203 preset, which no printer here holds
+    assert listed["printers"] == [] and listed["media"] == ["panduit-s150x225vaty-2up-203"]
+    reg_both = tmp_path / "rboth.yaml"
+    reg_both.write_text(
+        reg300.read_text()
+        + f'  p203:\n    transport: "{tmp_path / "s203.ezpl"}"\n    media: panduit-s150x225vaty-2up-203\n'
+    )
+    rows = plan(root, load(str(reg_both)), [{"file": "j203.ezpl"}])
+    assert rows[0].ok and rows[0].printer == "p203"
