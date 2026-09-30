@@ -69,6 +69,14 @@ What is here
   spool/                   where prints land; .rasterezpl-printlog.jsonl is the log
 
 Everything a real print does happens here except the last inch: the bytes go to a file, not a head.
+The two printers here are file spools ON PURPOSE — the playground cannot reach a real printer, and the page's
+"check" on them reports the spool, not a USB device.
+
+Real printers: serve this same root with YOUR registry (the one `rasterezpl printers` lists) instead of the
+demo's, and the plan routes these jobs to the heads that hold their media — a print from there is real output:
+
+  rasterezpl serve --root <this directory> --open           # ~/.config/rasterezpl/printers.yaml
+  rasterezpl serve --root <this directory> --registry my-printers.yaml --open
 """
 
 
@@ -201,6 +209,10 @@ def demo(
     for s in info["skipped"]:
         print(f"  skipped {s}")
     print(f"  registry {info['registry'].name}: printers demo-panduit, demo-godex → file spools under spool/")
+    print(
+        "  (no real printer is reachable from the demo; to print these jobs for real, serve this root with your"
+    )
+    print("   own registry: rasterezpl serve --root <dir> --open — see README.txt there)")
     if not serve_page:
         return 0
     from .server import serve

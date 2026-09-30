@@ -83,7 +83,9 @@ The demo's two "printers" are file spools: everything a real print does happens 
 proof, the send, the log — and the bytes land in `spool/<printer>.ezpl` instead of a head. Decode a spool or open
 its proof and you see exactly what would have printed. The demo root holds text labels, test patterns (a
 checkerboard, stripes, a dithered gradient) and the calibration ruler; its `README.txt` lists commands to try.
-Swap a transport in its `printers.yaml` for `usb:<serial>` or `tcp://host` and the same page drives a real head.
+The demo never reaches a real printer, by design; its "check" reports the spool. To print the demo jobs for real,
+serve the same root with your own registry — `rasterezpl serve --root <demo dir> --open` uses
+`~/.config/rasterezpl/printers.yaml` — and the plan routes each job to the head holding its media.
 
 | the proof of a demo text row | the checkerboard, dot for dot |
 |---|---|
