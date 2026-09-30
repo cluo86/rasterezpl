@@ -72,6 +72,23 @@ printer offset until you print a ruler.
 - Bitmap data can contain `\rE\r`; jobs are parsed by declared lengths, never split on bytes.
 - Use the printer's stored darkness and speed unless you know the values your old software sent.
 
+## Try it with no printer
+
+```
+pip install rasterezpl
+rasterezpl demo            # writes a demo root and opens the page on it
+```
+
+The demo's two "printers" are file spools: everything a real print does happens — the plan, the guards, the
+proof, the send, the log — and the bytes land in `spool/<printer>.ezpl` instead of a head. Decode a spool or open
+its proof and you see exactly what would have printed. The demo root holds text labels, test patterns (a
+checkerboard, stripes, a dithered gradient) and the calibration ruler; its `README.txt` lists commands to try.
+Swap a transport in its `printers.yaml` for `usb:<serial>` or `tcp://host` and the same page drives a real head.
+
+| the proof of a demo text row | the checkerboard, dot for dot |
+|---|---|
+| ![demo text labels](docs/demo-welcome.png) | ![demo checkerboard](docs/demo-checker.png) |
+
 ## Print from the browser
 
 ```

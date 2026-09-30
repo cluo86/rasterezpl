@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-09-30
+
+- `rasterezpl demo [DIR]`: a playground with no printer — demo jobs (text labels on two media, a checkerboard,
+  stripes, a dithered gradient, the calibration ruler) and a registry whose printers are file spools, then the
+  page on it. The whole pipeline runs; the bytes land in `spool/`.
+- `header_of` / `matching_media` accept a job with the registration prefix in front (`^R`, `~Q`), so a spooled
+  file decodes like the job it came from.
+
 ## 0.3.1 — 2026-09-30
 
 - `jobs.run(..., to=…)`: override the transport for every row (a test spool); the log records the target used.

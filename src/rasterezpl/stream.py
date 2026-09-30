@@ -208,7 +208,8 @@ def header_of(data: bytes) -> tuple[int, int, int] | None:
     """(length_mm, gap_mm, width_mm) from a job's first ^Q/^W header, or None if it is not our stream."""
     import re
 
-    m = re.match(rb"\^Q(\d+),(\d+)\r\^W(\d+)\r", data)
+    # a spooled job may carry the printer's registration in front (^R<x>\r ~Q<±y>\r, offset_commands) — skip it
+    m = re.match(rb"(?:\^R\d+\r|~Q[+-]?\d+\r)*\^Q(\d+),(\d+)\r\^W(\d+)\r", data)
     return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
 
 

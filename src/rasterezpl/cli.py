@@ -11,6 +11,7 @@ rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  cal
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
 rasterezpl printcart [--root DIR] FILE[:LABELS] … [--dry-run]              several files, one plan, one print
 rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--open]   the browser front end (server.py)
+rasterezpl demo    [DIR] [--no-open] [--no-serve]                         a playground: demo jobs + file-spool printers
 """
 
 from __future__ import annotations
@@ -125,6 +126,16 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument("--open", action="store_true", help="open the page in the default browser")
 
     q = sub.add_parser(
+        "demo",
+        help="a playground with no printer: writes demo jobs (text labels, test patterns, the ruler) and a "
+        "registry whose printers are FILE SPOOLS into DIR (default the temp dir), then serves the page on it",
+    )
+    q.add_argument("dir", nargs="?", help="the demo root (default <tempdir>/rasterezpl-demo)")
+    q.add_argument("--port", type=int, default=8123)
+    q.add_argument("--no-open", action="store_true", help="do not open the browser")
+    q.add_argument("--no-serve", action="store_true", help="write the demo root only")
+
+    q = sub.add_parser(
         "printcart",
         help="several job files in ONE plan and one print: FILE[:LABELS] … — the plan (file, labels, count, "
         "printer chosen by the file's media) is shown, then one job per file; nothing is sent while any entry is "
@@ -165,6 +176,10 @@ def _resolve(reg: Registry, args, data: bytes | None = None):
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.cmd == "demo":
+        from .demo import demo
+
+        return demo(Path(args.dir) if args.dir else None, args.port, not args.no_open, not args.no_serve)
     if args.cmd == "serve":
         from .server import serve
 

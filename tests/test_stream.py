@@ -173,3 +173,10 @@ def test_render_text_refuses_to_clip_and_ruler_overlays():
     dec_over = rz.decode_block(rz.parse_blocks(over)[0][1], m)
     dec_plain = rz.decode_block(rz.parse_blocks(plain)[0][1], m)
     assert dec_over.tobytes() == ImageChops.darker(dec_plain, page).tobytes()
+
+
+def test_header_of_skips_a_registration_prefix():
+    m = rz.PANDUIT_S150X225VATY_2UP
+    data = rz.job(m, [[None, None]])
+    assert rz.header_of(data) == rz.header_of(b"^R3\r~Q-9\r" + data) == (57, 3, 83)
+    assert rz.header_of(b"garbage" + data) is None
