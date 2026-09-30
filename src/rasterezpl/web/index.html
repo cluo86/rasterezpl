@@ -23,9 +23,10 @@ pre{font-family:ui-monospace,Menlo,monospace;font-size:12px;margin:4px 0}
 <div id="cart"></div>
 
 <h2>Compose — your own labels</h2>
-<div class="muted">Type labels (one per block, blank line between; <code>{n}</code> = running number), or paste rows with a header and a template, or open an Easy-Mark <code>.pemx</code>. Preview is the exact print; compose saves a job file under <code>composed/</code> and puts it in the cart.</div>
+<div class="muted">Type labels (one per block, blank line between; <code>{n}</code> = running number), or paste rows with a header and a template, or open an Easy-Mark <code>.pemx</code>. Pick a layout (a decoration around the text; <em>sample</em> fills its example) and a face — the bundled faces render the same everywhere. Preview is the exact print; compose saves a job file under <code>composed/</code> and puts it in the cart.</div>
 <table><tr><td>
  media <select id="c_media"></select> font <select id="c_font"></select> pt <input type="text" id="c_pt" size="4" value="5.4">
+ layout <select id="c_layout"></select> <button onclick="cSample()" title="fill the text with this layout's sample">sample</button>
  align <select id="c_align"><option>center</option><option>left</option></select>
  <label><input type="checkbox" id="c_fit"> fit</label> copies <input type="text" id="c_copies" size="2" value="1"> start <input type="text" id="c_start" size="3" value="1">
  name <input type="text" id="c_name" size="16" value="labels"><br>
@@ -120,7 +121,7 @@ async function loadLog() {
 // ---- compose -----------------------------------------------------------------------------------------------
 function cSpec() {
   const rows = $("c_rows").value.trim();
-  const d = {media: $("c_media").value, font: $("c_font").value, pt: parseFloat($("c_pt").value), align: $("c_align").value, fit: $("c_fit").checked,
+  const d = {media: $("c_media").value, font: $("c_font").value, pt: parseFloat($("c_pt").value), align: $("c_align").value, fit: $("c_fit").checked, layout: $("c_layout").value,
              copies: parseInt($("c_copies").value || "1", 10), start: parseInt($("c_start").value || "1", 10), name: $("c_name").value};
   if (rows) { d.rows = rows; d.template = $("c_tpl").value; } else { d.text = $("c_text").value; }
   return d;
@@ -141,9 +142,13 @@ async function cCompose() {
     await loadFiles(); CART.push({file: j.file, labels: ""}); saveCart(); renderCart();
   } catch (e) { $("c_note").textContent = e.message; $("c_note").className = "bad"; }
 }
+let LAYOUTS = [];
+function cSample() { const l = LAYOUTS.find(x => x.name === $("c_layout").value); if (l) { $("c_text").value = l.sample; $("c_rows").value = ""; } }
 async function loadCompose() {
-  const [fonts, media, v] = await Promise.all([api("/api/fonts"), api("/api/media"), api("/api/version")]);
-  $("c_font").innerHTML = fonts.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join("") || "<option value=''>no face found on this machine</option>";
+  const [fonts, media, v, layouts] = await Promise.all([api("/api/fonts"), api("/api/media"), api("/api/version"), api("/api/layouts")]);
+  LAYOUTS = layouts;
+  $("c_layout").innerHTML = layouts.map(l => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join("");
+  $("c_font").innerHTML = fonts.map(f => `<option value="${esc(f.name)}">${esc(f.name)}${f.bundled ? " (bundled)" : ""}</option>`).join("") || "<option value=''>no face found on this machine</option>";
   $("c_media").innerHTML = media.map(m => `<option value="${esc(m.name)}">${esc(m.name)}${m.printers.length ? " — " + m.printers.join(", ") : ""}</option>`).join("");
   $("version").textContent = `rasterezpl ${v.version}`;
 }

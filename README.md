@@ -89,6 +89,8 @@ Swap a transport in its `printers.yaml` for `usb:<serial>` or `tcp://host` and t
 |---|---|
 | ![demo text labels](docs/demo-welcome.png) | ![demo checkerboard](docs/demo-checker.png) |
 
+![two layouts from the template sheet: a banner in Bebas Neue, a sidebar in JetBrains Mono](docs/demo-layouts.png)
+
 ## Print from the browser
 
 ```
@@ -112,6 +114,12 @@ rasterezpl printcart --root ~/labels a/b.ezpl:1-4,7 c/d.ezpl --dry-run   # the p
 ```
 
 ### Your own labels
+
+Four faces ship with the package under the SIL Open Font License — Inter, Inter Bold, JetBrains Mono, Bebas
+Neue — so a label composed on one machine renders identically on another. Six layouts decorate the text:
+`framed`, `banner` (first line white on black), `sidebar`, `corners`, `ticket`, and `plain`; each has a sample
+the page fills in with one click, and the demo root shows them all in `templates/layouts.ezpl`.
+
 
 The page composes jobs too: type labels (one per block, `{n}` = running number), paste rows with a header and a
 template like `{device} {port}\nRack {rack} U{u}`, or open an Easy-Mark `.pemx` project (its series data are the

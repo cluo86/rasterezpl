@@ -25,12 +25,36 @@ FONT_CANDIDATES = {
 }
 
 
+def bundled_fonts() -> dict[str, str]:
+    """The faces shipped with the package (SIL OFL, see fonts/LICENSES.md): display name → path. They render the
+    same on every machine, which is the point: Inter, Inter Bold, JetBrains Mono, Bebas Neue."""
+    from importlib import resources
+
+    out: dict[str, str] = {}
+    d = resources.files("rasterezpl").joinpath("fonts")
+    for f in sorted(d.iterdir(), key=lambda x: x.name):
+        if f.name.lower().endswith((".ttf", ".otf")):
+            stem = f.name.rsplit(".", 1)[0]
+            name = {
+                "Inter-Regular": "Inter",
+                "Inter-Bold": "Inter Bold",
+                "JetBrainsMono-Regular": "JetBrains Mono",
+                "BebasNeue-Regular": "Bebas Neue",
+            }.get(stem, stem)
+            out[name] = str(f)
+    return out
+
+
 def find_font(*names: str) -> str | None:
-    """The first of the named faces present on this machine, by its known paths; a path is accepted as is.
-    Returns None rather than a substitute: a different face prints a different label."""
+    """The first of the named faces present: a path as is, a bundled face (see `bundled_fonts`), or a face known
+    by its usual paths on this machine. Returns None rather than a substitute: a different face prints a
+    different label."""
+    bundled = {k.lower(): v for k, v in bundled_fonts().items()}
     for name in names:
         if Path(name).exists():
             return name
+        if name.lower() in bundled:
+            return bundled[name.lower()]
         for cand in FONT_CANDIDATES.get(name.lower(), ()):
             if Path(cand).exists():
                 return cand

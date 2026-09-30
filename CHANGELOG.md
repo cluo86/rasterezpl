@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-09-30
+
+- Bundled faces (SIL OFL, `fonts/LICENSES.md`): Inter, Inter Bold, JetBrains Mono, Bebas Neue — a label renders
+  the same on every machine; `find_font` resolves them by name, `/api/fonts` lists them first.
+- Layouts (`rasterezpl.layouts`): a decoration around the text — `framed`, `banner`, `sidebar`, `corners`,
+  `ticket`, or `plain` — each with a sample text; the composer's `layout` field, `/api/layouts`, a layout select
+  and a *sample* button on the page. The demo root ships `templates/layouts.ezpl`, every layout filled.
+
 ## 0.4.0 — 2026-09-30
 
 - `rasterezpl demo [DIR]`: a playground with no printer — demo jobs (text labels on two media, a checkerboard,

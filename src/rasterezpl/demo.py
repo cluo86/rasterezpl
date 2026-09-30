@@ -13,10 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .layouts import LAYOUTS, render_label
 from .presets import PANDUIT_S150X225VATY_2UP
 from .registry import load
 from .stream import job
-from .text import find_font, pt_to_px, render_text
+from .text import bundled_fonts, find_font, pt_to_px, render_text
 
 DEMO_DIRNAME = "rasterezpl-demo"
 
@@ -58,6 +59,8 @@ log the front end keeps. Try, from this directory:
 What is here
   text/welcome.ezpl        four text labels on the Panduit two-across stock (Arial or DejaVu Sans)
   text/flags.ezpl          three tags on the 92 x 34 mm flag media
+  templates/layouts.ezpl   every layout (framed, banner, sidebar, corners, ticket, plain) with its sample text,
+                           set in the bundled faces Inter, Inter Bold, JetBrains Mono, Bebas Neue
   patterns/checker.ezpl    a 16-dot checkerboard filling both print areas — dot-exact geometry check
   patterns/stripes.ezpl    diagonal stripes, 1 dot wide, 8 apart — a head/ribbon check
   patterns/gradient.ezpl   an ordered-dither gradient — darkness and speed settings
@@ -114,7 +117,7 @@ def _gradient(w: int, h: int):
 def build(root: Path) -> dict:
     """Write the demo root. Returns what was written and what was skipped (no font → no text jobs)."""
     root = root.resolve()
-    for d in ("text", "patterns", "spool"):
+    for d in ("text", "patterns", "templates", "spool"):
         (root / d).mkdir(parents=True, exist_ok=True)
     (root / "printers.yaml").write_text(REGISTRY_YAML.format(root=root.as_posix()), encoding="utf-8")
     (root / "README.txt").write_text(README_TXT, encoding="utf-8")
@@ -148,7 +151,36 @@ def build(root: Path) -> dict:
             job(flags, [[render_text((fw, fh), t.split("\n"), font, fpx)] for t in tags])
         )
         written.append("text/flags.ezpl")
+    # templates: every layout with its sample text, in the bundled faces (they render the same everywhere)
+    faces = bundled_fonts()
+    face_for = {
+        "plain": "Inter",
+        "framed": "Inter",
+        "banner": "Bebas Neue",
+        "sidebar": "JetBrains Mono",
+        "corners": "Inter Bold",
+        "ticket": "Bebas Neue",
+    }
     _, _, aw, ah = pand.area_px(0)
+    tpl_imgs = []
+    for lay in LAYOUTS.values():
+        fpath = faces[face_for.get(lay.name, "Inter")]
+        big = lay.name in ("banner", "ticket")
+        tpl_imgs.append(
+            render_label(
+                aw,
+                ah,
+                lay.sample.split("\n"),
+                fpath,
+                pt_to_px(7 if big else 5.4, pand.dpi),
+                lay.name,
+                align="left" if lay.name == "sidebar" else "center",
+            )
+        )
+    (root / "templates" / "layouts.ezpl").write_bytes(
+        job(pand, [tpl_imgs[i : i + 2] for i in range(0, len(tpl_imgs), 2)])
+    )
+    written.append("templates/layouts.ezpl")
     (root / "patterns" / "checker.ezpl").write_bytes(job(pand, [[_checker(aw, ah), _checker(aw, ah, 8)]]))
     (root / "patterns" / "stripes.ezpl").write_bytes(job(pand, [[_stripes(aw, ah), _stripes(aw, ah, 4)]]))
     (root / "patterns" / "gradient.ezpl").write_bytes(job(pand, [[_gradient(aw, ah), _gradient(aw, ah)]]))

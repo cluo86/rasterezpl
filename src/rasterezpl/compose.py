@@ -1,5 +1,6 @@
 """Compose label jobs from typed text, pasted rows or an Easy-Mark project — the front end's own input, beyond
-job files something else generated.
+job files something else generated. A `layout` (rasterezpl.layouts) draws a decoration around the text: framed,
+banner, sidebar, corners, ticket — or plain.
 
 A job is composed from a SPEC: the media, the face and size, alignment, copies, and the labels themselves as
 lines of text. ``compose`` renders it with the same ``render_text`` the CLI uses and writes a ``.ezpl`` under
@@ -27,10 +28,11 @@ import zipfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .layouts import render_label
 from .media import Media
 from .registry import Registry
 from .stream import count_labels, decode_block, job, parse_blocks
-from .text import FONT_CANDIDATES, find_font, pt_to_px, render_text
+from .text import FONT_CANDIDATES, bundled_fonts, find_font, pt_to_px
 
 COMPOSED_DIR = "composed"
 FONTS_DIR = "fonts"
@@ -49,6 +51,7 @@ class Spec:
     start: int = 1
     rotate180: bool = False
     area: int | None = None  # a single print area on multi-up media (default: fill areas in order)
+    layout: str = "plain"  # a decoration around the text (rasterezpl.layouts)
 
     @classmethod
     def from_dict(cls, d: dict) -> Spec:
@@ -69,6 +72,7 @@ class Spec:
             start=int(d.get("start", 1) or 1),
             rotate180=bool(d.get("rotate180", False)),
             area=None if d.get("area") in (None, "") else int(d["area"]),
+            layout=str(d.get("layout") or "plain"),
         )
 
 
@@ -118,7 +122,7 @@ def expand(labels: list[str], copies: int = 1, start: int = 1) -> list[str]:
 
 def fonts_available(root: Path | None = None) -> list[dict]:
     """Faces this machine can print: the known candidates that resolve, plus any .ttf/.otf under <root>/fonts."""
-    out = []
+    out = [{"name": n, "path": p, "bundled": True} for n, p in bundled_fonts().items()]
     for name in FONT_CANDIDATES:
         found = find_font(name)
         if found:
@@ -161,11 +165,10 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
     for t in texts:
         k = spec.area or 0
         _, _, aw, ah = m.area_px(k)
-        imgs.append(
-            render_text(
-                (aw, ah), t.split("\n"), font, px, align=spec.align, fit=spec.fit, rotate180=spec.rotate180
-            )
-        )
+        im = render_label(aw, ah, t.split("\n"), font, px, spec.layout, spec.align, spec.fit)
+        if spec.rotate180:
+            im = im.rotate(180)
+        imgs.append(im)
     rows: list[list] = []
     if spec.area is not None:
         for im in imgs:

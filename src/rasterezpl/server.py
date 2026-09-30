@@ -39,7 +39,12 @@ ENDPOINTS: list[tuple[str, str, str]] = [
     ("GET", "/api/printers", "the registry's printers: name, transport, media_name, offset_in, note"),
     ("GET", "/api/printers/<name>/status", "~S,CHECK that printer (00 = ready)"),
     ("GET", "/api/media", "the registry's media: name, dpi, size, print areas, printers holding it"),
-    ("GET", "/api/fonts", "faces this machine can print: known candidates that resolve + <root>/fonts"),
+    (
+        "GET",
+        "/api/fonts",
+        "faces this machine can print: bundled (OFL) + known candidates that resolve + <root>/fonts",
+    ),
+    ("GET", "/api/layouts", "the label layouts (a decoration around the text) with a sample text each"),
     ("GET", "/api/files", "every .ezpl under the root: blocks, labels, matching media, printers"),
     ("GET", "/api/proof?file=F&label=N", "PNG proof of the web row holding label N"),
     ("GET", "/api/spec?file=composed/x.json", "a composed job's spec (to reload the form)"),
@@ -170,6 +175,10 @@ class Handler(SimpleHTTPRequestHandler):
             )
         if path == "/api/fonts":
             return self._json(fonts_available(self.root))
+        if path == "/api/layouts":
+            from .layouts import LAYOUTS
+
+            return self._json([{"name": lay.name, "sample": lay.sample} for lay in LAYOUTS.values()])
         if path == "/api/files":
             return self._json(list_files(self.root, self.reg))
         if path == "/api/proof":

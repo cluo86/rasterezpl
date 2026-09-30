@@ -1,0 +1,144 @@
+"""Label layouts — a decoration around the text, drawn in dots, then the text rendered into what is left.
+
+A layout is a function of the print area (w, h dots), the lines, the face and size: it paints its pattern and
+returns the label image. The text itself is always :func:`rasterezpl.text.render_text` into an inner box, so the
+no-clip / fit rules hold inside every layout. Each layout carries a SAMPLE text so a template can be shown filled.
+
+    plain     the text, nothing else (the default)
+    framed    a rounded double rule around the text
+    banner    the first line white-on-black in a band along the top, the rest below
+    sidebar   a striped bar down the left edge, the text beside it
+    corners   corner marks, like a crop-marked card
+    ticket    a dashed rule with a "tear here" gap between the first line and the rest
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from .text import render_text
+
+
+@dataclass(frozen=True)
+class Layout:
+    name: str
+    sample: str  # lines joined by "\n"
+    draw: Callable  # (w, h, lines, font, px, align, fit) -> PIL image
+
+
+def _canvas(w: int, h: int):
+    from PIL import Image, ImageDraw
+
+    img = Image.new("L", (w, h), 255)
+    return img, ImageDraw.Draw(img)
+
+
+def _text_into(img, box: tuple[int, int, int, int], lines, font, px, align, fit, invert=False):
+    """Render the lines into box=(x, y, w, h) of img; `invert` = white text on the black box."""
+    from PIL import ImageOps
+
+    x, y, bw, bh = box
+    if bw <= 0 or bh <= 0 or not lines:
+        return img
+    t = render_text((bw, bh), lines, font, px, align=align, fit=fit)
+    if invert:
+        t = ImageOps.invert(t)
+    img.paste(t, (x, y))
+    return img
+
+
+def plain(w, h, lines, font, px, align="center", fit=False):
+    return render_text((w, h), lines, font, px, align=align, fit=fit)
+
+
+def framed(w, h, lines, font, px, align="center", fit=False):
+    img, d = _canvas(w, h)
+    m = max(2, min(w, h) // 30)
+    r = max(4, min(w, h) // 12)
+    d.rounded_rectangle((m, m, w - 1 - m, h - 1 - m), radius=r, outline=0, width=max(1, m // 2))
+    m2 = m * 3
+    d.rounded_rectangle((m2, m2, w - 1 - m2, h - 1 - m2), radius=max(2, r - m2 // 2), outline=0, width=1)
+    pad = m2 + max(2, m)
+    return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
+
+
+def banner(w, h, lines, font, px, align="center", fit=False):
+    img, d = _canvas(w, h)
+    band = int(px * 1.6) + 4
+    band = min(band, h // 2)
+    d.rectangle((0, 0, w - 1, band - 1), fill=0)
+    head, rest = lines[:1], lines[1:]
+    _text_into(img, (2, 1, w - 4, band - 2), head, font, px, align, True, invert=True)
+    pad = max(2, band // 6)
+    return _text_into(img, (pad, band + pad, w - 2 * pad, h - band - 2 * pad), rest, font, px, align, fit)
+
+
+def sidebar(w, h, lines, font, px, align="left", fit=False):
+    img, d = _canvas(w, h)
+    bar = max(6, w // 14)
+    period = max(4, bar // 2)
+    for y in range(-bar, h + bar, period):
+        d.line((0, y, bar, y + bar), fill=0, width=max(1, period // 3))
+    d.rectangle((0, 0, bar, h - 1), outline=0, width=1)
+    pad = max(2, bar // 3)
+    return _text_into(img, (bar + pad * 2, pad, w - bar - pad * 3, h - 2 * pad), lines, font, px, align, fit)
+
+
+def corners(w, h, lines, font, px, align="center", fit=False):
+    img, d = _canvas(w, h)
+    L = max(6, min(w, h) // 6)
+    t = max(1, min(w, h) // 60)
+    for x0, y0, dx, dy in ((0, 0, 1, 1), (w - 1, 0, -1, 1), (0, h - 1, 1, -1), (w - 1, h - 1, -1, -1)):
+        d.line((x0, y0, x0 + dx * L, y0), fill=0, width=t)
+        d.line((x0, y0, x0, y0 + dy * L), fill=0, width=t)
+    pad = max(3, t * 2 + 2)
+    return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
+
+
+def ticket(w, h, lines, font, px, align="center", fit=False):
+    img, d = _canvas(w, h)
+    head, rest = lines[:1], lines[1:]
+    top = int(px * 1.5) + 4 if rest else h
+    top = min(top, h // 2) if rest else h
+    _text_into(img, (2, 1, w - 4, top - 2), head, font, px, align, True)
+    if rest:
+        dash = max(3, w // 60)
+        for x in range(2, w - 2, dash * 2):
+            d.line((x, top, min(x + dash, w - 3), top), fill=0, width=1)
+        # the scissors: a small notch at each end of the rule
+        d.ellipse((0, top - 3, 6, top + 3), outline=0)
+        d.ellipse((w - 7, top - 3, w - 1, top + 3), outline=0)
+        pad = 3
+        _text_into(img, (pad, top + pad, w - 2 * pad, h - top - 2 * pad), rest, font, px, align, fit)
+    return img
+
+
+LAYOUTS: dict[str, Layout] = {
+    "plain": Layout("plain", "rasterezpl\nplain text\nthe default", plain),
+    "framed": Layout("framed", "FRAMED\ndouble rule\nrounded corners", framed),
+    "banner": Layout("banner", "PATCH PANEL A", banner),
+    "sidebar": Layout("sidebar", "sidebar\nstriped bar left\ntext beside it", sidebar),
+    "corners": Layout("corners", "CORNERS\ncrop-marked card", corners),
+    "ticket": Layout("ticket", "TICKET 0042\nkeep this half\ntear along the rule", ticket),
+}
+# banners want a second line under the band in the sample
+LAYOUTS["banner"] = Layout("banner", "PATCH PANEL A\nrack 12 · U31\n24 × LC duplex", banner)
+
+
+def render_label(
+    w: int,
+    h: int,
+    lines: list[str],
+    font: str,
+    px: int,
+    layout: str = "plain",
+    align: str = "center",
+    fit: bool = False,
+):
+    """One label image of (w, h) dots in the named layout."""
+    try:
+        lay = LAYOUTS[layout]
+    except KeyError as e:
+        raise ValueError(f"unknown layout {layout!r}; one of {', '.join(LAYOUTS)}") from e
+    return lay.draw(w, h, lines, font, px, align, fit)

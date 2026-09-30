@@ -47,8 +47,14 @@ Paths in requests are relative to the served root and confined to it; only `.ezp
 ```
 
 ### `GET /api/fonts`
-Faces this machine can print: the known candidates that resolve, plus any `.ttf`/`.otf` under `<root>/fonts`.
-`[{"name": "arial", "path": "/System/Library/Fonts/Supplemental/Arial.ttf"}]`
+Faces this machine can print: the bundled OFL faces first (`"bundled": true` — Inter, Inter Bold, JetBrains
+Mono, Bebas Neue; they render the same on every machine), then the known candidates that resolve, then any
+`.ttf`/`.otf` under `<root>/fonts`.
+`[{"name": "Inter", "path": "…/rasterezpl/fonts/Inter-Regular.ttf", "bundled": true}, {"name": "arial", "path": "…"}]`
+
+### `GET /api/layouts`
+The label layouts, each with a sample text: `[{"name": "banner", "sample": "PATCH PANEL A\nrack 12 · U31\n…"}, …]`.
+Layouts: `plain`, `framed`, `banner`, `sidebar`, `corners`, `ticket`.
 
 ### `GET /api/files`
 Every job under the root.
@@ -109,6 +115,7 @@ A Spec, in one of three input forms:
 | `copies` | copies of each label (default 1) |
 | `start` | the first `{n}` (default 1) |
 | `rotate180` | turn the print on the label (default false) |
+| `layout` | a decoration around the text: `plain` (default), `framed`, `banner`, `sidebar`, `corners`, `ticket` (`/api/layouts`) |
 | `area` | a single print area on multi-up media (default: fill areas in order) |
 | `preview` | `true` → the response is `image/png`, the proof of `block` (default 1), and nothing is saved |
 
