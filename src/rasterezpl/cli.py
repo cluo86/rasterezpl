@@ -9,6 +9,7 @@ rasterezpl image   --media M a.png b.png … -o job.ezpl                     bit
 rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
+rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--log F]  the browser front end (see server.py)
 """
 
 from __future__ import annotations
@@ -106,6 +107,18 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument("--media", help="media name; default: matched from the job's ^Q/^W header")
     q.add_argument("--block", type=int, help="only this block (1-based)")
     q.add_argument("-o", "--out", required=True, help="PNG path; several blocks → <stem>-<n>.png")
+
+    q = sub.add_parser(
+        "serve",
+        help="the browser front end: job files under --root, the registry's printers, a cart, one print "
+        "(http://127.0.0.1:8123/rasterezpl/)",
+    )
+    q.add_argument("--root", default=".", help="directory holding the .ezpl job files (served recursively)")
+    q.add_argument(
+        "--host", default="127.0.0.1", help="bind address (loopback by default — printers are physical)"
+    )
+    q.add_argument("--port", type=int, default=8123)
+    q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
     return p
 
 
@@ -137,6 +150,10 @@ def _resolve(reg: Registry, args, data: bytes | None = None):
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.cmd == "serve":
+        from .server import serve
+
+        return serve(Path(args.root), args.host, args.port, args.registry, args.log)
     reg = load(args.registry)
 
     if args.cmd == "printers":

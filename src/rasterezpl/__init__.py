@@ -4,6 +4,7 @@ from .calibrate import ruler_job, ruler_page
 from .media import EOL, LEFT_MARGIN_MAX_DOTS, OFFSET_MAX_DOTS, Media, offset_commands, setup_commands
 from .presets import PANDUIT_S150X225VATY_2UP, PANDUIT_S150X225VATY_2UP_203, PRESETS
 from .proof import proof_image
+from .server import make_server, plan, serve
 from .stream import (
     STRIP_ROWS,
     bitmap_rows,
@@ -27,7 +28,7 @@ from .stream import (
 from .text import FONT_CANDIDATES, find_font, pt_to_px, render_text
 from .transport import UsbPrinter, list_usb_printers, send, status, status_tcp, status_usb
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "EOL",
@@ -50,6 +51,9 @@ __all__ = [
     "header_of",
     "job",
     "label_block",
+    "make_server",
+    "plan",
+    "serve",
     "list_usb_printers",
     "match_media",
     "matching_media",

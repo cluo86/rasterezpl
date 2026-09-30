@@ -72,6 +72,30 @@ printer offset until you print a ruler.
 - Bitmap data can contain `\rE\r`; jobs are parsed by declared lengths, never split on bytes.
 - Use the printer's stored darkness and speed unless you know the values your old software sent.
 
+## Print from the browser
+
+```
+rasterezpl serve --root ~/labels            # → http://127.0.0.1:8123/rasterezpl/
+```
+
+The browser is the GUI; the `serve` process holds the printers. It lists every `.ezpl` under the root with
+the media it was written for and the printers that hold that media, shows the proof of any label, and takes a
+cart of files and label ranges to ONE print: the plan (file, labels, count, printer, refusal) is shown first,
+a refused row stops the whole cart, and every send is appended to `<root>/.rasterezpl-printlog.jsonl`.
+
+The same guards as `rasterezpl print`: a file goes only to a printer holding its media, and only if every block
+lies inside that media's print areas. Paths are confined to the root. It binds `127.0.0.1` — a printer is a
+physical output, so run it on the machine the printers hang off; `--host 0.0.0.0` is your call.
+
+Your own page beside the job files can drive it, same origin:
+
+```
+GET  /api/printers                 GET /api/printers/<name>/status      GET /api/files
+GET  /api/proof?file=F&label=N     GET /api/log?n=50
+POST /api/plan   {"jobs":[{"file":"a/b.ezpl","labels":"1-4,7","printer":"tdp43me"}]}
+POST /api/print  {"jobs":[…],"dry_run":false}
+```
+
 ## Library
 
 ```python
