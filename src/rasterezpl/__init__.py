@@ -1,11 +1,14 @@
 """rasterezpl — print any bitmap to Godex-language (EZPL) label printers, driverless, from macOS or Linux."""
 
+__version__ = "0.3.0"
+
 from .calibrate import ruler_job, ruler_page
 from .compose import Spec, compose, import_pemx, parse_rows, parse_text
+from .jobs import PlanRow, format_plan, list_files, plan, run
 from .media import EOL, LEFT_MARGIN_MAX_DOTS, OFFSET_MAX_DOTS, Media, offset_commands, setup_commands
 from .presets import PANDUIT_S150X225VATY_2UP, PANDUIT_S150X225VATY_2UP_203, PRESETS
 from .proof import proof_image
-from .server import make_server, plan, serve
+from .server import make_server, serve
 from .stream import (
     STRIP_ROWS,
     bitmap_rows,
@@ -29,8 +32,6 @@ from .stream import (
 from .text import FONT_CANDIDATES, find_font, pt_to_px, render_text
 from .transport import UsbPrinter, list_usb_printers, send, status, status_tcp, status_usb
 
-__version__ = "0.2.0"
-
 __all__ = [
     "EOL",
     "LEFT_MARGIN_MAX_DOTS",
@@ -41,6 +42,7 @@ __all__ = [
     "PANDUIT_S150X225VATY_2UP_203",
     "PRESETS",
     "Media",
+    "PlanRow",
     "Spec",
     "UsbPrinter",
     "bitmap_rows",
@@ -50,11 +52,13 @@ __all__ = [
     "decode_block",
     "decode_job",
     "find_font",
+    "format_plan",
     "first_labels",
     "header_of",
     "import_pemx",
     "job",
     "label_block",
+    "list_files",
     "make_server",
     "plan",
     "serve",
@@ -72,6 +76,7 @@ __all__ = [
     "render_text",
     "ruler_job",
     "ruler_page",
+    "run",
     "select_blocks",
     "select_labels",
     "send",

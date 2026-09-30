@@ -9,7 +9,8 @@ rasterezpl image   --media M a.png b.png … -o job.ezpl                     bit
 rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
-rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--log F]  the browser front end (see server.py)
+rasterezpl printcart [--root DIR] FILE[:LABELS] … [--dry-run]              several files, one plan, one print
+rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--open]   the browser front end (server.py)
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from pathlib import Path
 
 from . import __version__
 from .calibrate import ruler_job
+from .compose import Spec, render
+from .jobs import LOG_NAME, format_plan, parse_cart, plan, run
 from .media import Media
 from .registry import Registry, load
 from .stream import (
@@ -34,7 +37,7 @@ from .stream import (
     parse_blocks,
     select_labels,
 )
-from .text import find_font, pt_to_px, render_text
+from .text import find_font
 from .transport import list_usb_printers, send, status
 
 
@@ -119,6 +122,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     q.add_argument("--port", type=int, default=8123)
     q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
+    q.add_argument("--open", action="store_true", help="open the page in the default browser")
+
+    q = sub.add_parser(
+        "printcart",
+        help="several job files in ONE plan and one print: FILE[:LABELS] … — the plan (file, labels, count, "
+        "printer chosen by the file's media) is shown, then one job per file; nothing is sent while any entry is "
+        "refused; every send is logged",
+    )
+    q.add_argument("entry", nargs="+", help="a .ezpl under --root, optionally :LABELS as in print --labels")
+    q.add_argument("--root", default=".", help="the directory the entries are relative to (default .)")
+    q.add_argument("--dry-run", action="store_true", help="the plan only, send nothing")
+    q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
     return p
 
 
@@ -153,8 +168,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "serve":
         from .server import serve
 
-        return serve(Path(args.root), args.host, args.port, args.registry, args.log)
+        return serve(Path(args.root), args.host, args.port, args.registry, args.log, open_browser=args.open)
     reg = load(args.registry)
+
+    if args.cmd == "printcart":
+        root = Path(args.root).resolve()
+        try:
+            rows = plan(root, reg, parse_cart(args.entry))
+        except ValueError as e:
+            sys.exit(str(e))
+        print(format_plan(rows))
+        log = Path(args.log).expanduser() if args.log else root / LOG_NAME
+        for note in run(root, reg, rows, log, dry_run=args.dry_run):
+            print(note)
+        return 0 if all(r.ok for r in rows) else 2
 
     if args.cmd == "printers":
         if not reg.printers:
@@ -183,32 +210,25 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if st.startswith("00") else 1
 
     if args.cmd == "text":
-        _, m = _media(reg, args.media)
-        font = find_font(args.font)
-        if font is None:
-            sys.exit(
-                f"font {args.font!r} not found on this machine (a substitute would print a different label)"
-            )
-        px = pt_to_px(args.pt, m.dpi)
-        imgs = []
-        for text in args.labels:
-            k = args.area or 0
-            _, _, aw, ah = m.area_px(k)
-            lines = re.split(r"\\n|\n", text)  # a literal \n on the command line or a real newline
-            imgs.append(render_text((aw, ah), lines, font, px, align=args.align, fit=args.fit))
-        per = m.labels_per_block if args.area is None else 1
-        rows_out: list[list] = []
-        for i in range(0, len(imgs), per):
-            imgs_k = imgs[i : i + per]
-            if args.area is not None:
-                row: list = [None] * m.labels_per_block
-                row[args.area] = imgs_k[0]
-                rows_out.append(row)
-            else:
-                rows_out.append(imgs_k)
-        data = job(m, rows_out)
+        _media(reg, args.media)  # a clear error for an unknown media name
+        labels = [
+            re.sub(r"\\n", "\n", t) for t in args.labels
+        ]  # a literal \n on the command line = a new line
+        spec = Spec(
+            media=args.media,
+            font=args.font,
+            pt=args.pt,
+            labels=labels,
+            align=args.align,
+            fit=args.fit,
+            area=args.area,
+        )
+        try:
+            data, m, _, texts = render(reg, spec)
+        except ValueError as e:
+            sys.exit(str(e))
         Path(args.out).write_bytes(data)
-        print(f"wrote {args.out}: {len(imgs)} labels in {count_labels(data)} blocks for {m.name}")
+        print(f"wrote {args.out}: {len(texts)} labels in {count_labels(data)} blocks for {m.name}")
         return 0
 
     if args.cmd == "image":
