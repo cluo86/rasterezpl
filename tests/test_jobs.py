@@ -76,6 +76,12 @@ def test_plan_ambiguity_format_and_run(site):
     )
     entries = [json.loads(ln) for ln in log.read_text().splitlines()]
     assert [(e["printer"], e["count"]) for e in entries] == [("filep", 3), ("filep2", 4)]
+    # `to` overrides the transport for every row (a test spool), offset and media still the printer's
+    alt = root.parent / "alt.ezpl"
+    run(root, reg, rows[:1], log, to=str(alt))
+    assert alt.read_bytes().startswith(b"^R10\r~Q-2\r") and json.loads(log.read_text().splitlines()[-1])[
+        "transport"
+    ] == str(alt)
     # a refused row stops everything
     site["t1"].unlink()
     bad = plan(

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — 2026-09-30
+
+- `jobs.run(..., to=…)`: override the transport for every row (a test spool); the log records the target used.
+
 ## 0.3.0 — 2026-09-30
 
 - `rasterezpl.jobs`: the print-job layer on its own — `list_files`, `plan` / `PlanRow`, `format_plan`, `run`,

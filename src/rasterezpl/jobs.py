@@ -199,9 +199,18 @@ def format_plan(rows: list[PlanRow]) -> str:
     return "\n".join(lines)
 
 
-def run(root: Path, reg: Registry, rows: list[PlanRow], log: Path | None, dry_run: bool = False) -> list[str]:
+def run(
+    root: Path,
+    reg: Registry,
+    rows: list[PlanRow],
+    log: Path | None,
+    dry_run: bool = False,
+    to: str | None = None,
+) -> list[str]:
     """Send every row of a clean plan — nothing while any row is refused. One note per row; every real send is
-    appended to ``log`` as a JSON line (ts, file, labels, count, printer, transport, note)."""
+    appended to ``log`` as a JSON line (ts, file, labels, count, printer, transport, note). ``to`` overrides the
+    transport for every row (a tcp://, lp: or file path — a test spool); the printer's media and offset still
+    apply."""
     if dry_run:
         return ["dry run — nothing sent"]
     if any(r.refused for r in rows):
@@ -210,7 +219,8 @@ def run(root: Path, reg: Registry, rows: list[PlanRow], log: Path | None, dry_ru
     for r in rows:
         pr = reg.printers[r.printer or ""]
         data = select_labels(confine(root, r.file).read_bytes(), r.labels, pr.media)
-        note = send(data, pr.transport, pr.media, pr.offset_in)
+        target = to or pr.transport
+        note = send(data, target, pr.media, pr.offset_in)
         notes.append(f"{r.file} labels {r.labels} → {note}")
         if log is not None:
             entry = {
@@ -219,7 +229,7 @@ def run(root: Path, reg: Registry, rows: list[PlanRow], log: Path | None, dry_ru
                 "labels": r.labels,
                 "count": r.count,
                 "printer": pr.name,
-                "transport": pr.transport,
+                "transport": target,
                 "note": note,
             }
             with log.open("a", encoding="utf-8") as fh:

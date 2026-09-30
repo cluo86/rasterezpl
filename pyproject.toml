@@ -1,6 +1,6 @@
 [project]
 name = "rasterezpl"
-version = "0.3.0"
+version = "0.3.1"
 description = "Print any bitmap to Godex-language (EZPL) thermal label printers — Godex, Panduit TDP series — from macOS or Linux, no driver"
 readme = "README.md"
 license = { text = "MIT" }
