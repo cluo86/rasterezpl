@@ -9,7 +9,7 @@ rasterezpl image   --media M a.png b.png … -o job.ezpl                     bit
 rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
-rasterezpl printcart [--root DIR] FILE[:LABELS] … [--dry-run]              several files, one plan, one print
+rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run]              several files, one plan, one print
 rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--open]   the browser front end (server.py)
 rasterezpl demo    [DIR] [--no-open] [--no-serve]                         a playground: demo jobs + file-spool printers
 """
@@ -141,8 +141,17 @@ def _parser() -> argparse.ArgumentParser:
         "printer chosen by the file's media) is shown, then one job per file; nothing is sent while any entry is "
         "refused; every send is logged",
     )
-    q.add_argument("entry", nargs="+", help="a .ezpl under --root, optionally :LABELS as in print --labels")
-    q.add_argument("--root", default=".", help="the directory the entries are relative to (default .)")
+    q.add_argument(
+        "entry",
+        nargs="+",
+        help="a .ezpl job file (relative to --root), optionally :LABELS as in print --labels",
+    )
+    q.add_argument(
+        "--root",
+        default=".",
+        metavar="DIR",
+        help="the DIRECTORY the entries are relative to (default: the current one)",
+    )
     q.add_argument("--dry-run", action="store_true", help="the plan only, send nothing")
     q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
     return p
@@ -188,6 +197,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "printcart":
         root = Path(args.root).resolve()
+        if root.is_file():  # `--root some.ezpl` — the file was meant as an entry
+            sys.exit(
+                f"--root takes a directory, not a job file; did you mean:\n  rasterezpl printcart {args.root} "
+                + " ".join(args.entry)
+                + (" --dry-run" if args.dry_run else "")
+            )
+        if not root.is_dir():
+            sys.exit(f"--root {args.root!r} is not a directory")
         try:
             rows = plan(root, reg, parse_cart(args.entry))
         except ValueError as e:

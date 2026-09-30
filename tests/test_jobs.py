@@ -94,6 +94,24 @@ def test_plan_ambiguity_format_and_run(site):
 
 def test_cli_printcart(site, capsys):
     argv = ["--registry", str(site["regpath"]), "printcart", "--root", str(site["root"])]
+    # a job file given as --root is the common slip: refuse with the command that was meant
+    with pytest.raises(SystemExit) as e:
+        main(
+            [
+                "--registry",
+                str(site["regpath"]),
+                "printcart",
+                "--root",
+                str(site["root"] / "a.ezpl"),
+                "1",
+                "--dry-run",
+            ]
+        )
+    assert "did you mean" in str(e.value) and "--dry-run" in str(e.value)
+    with pytest.raises(SystemExit):
+        main(
+            ["--registry", str(site["regpath"]), "printcart", "--root", str(site["root"] / "nope"), "a.ezpl"]
+        )
     # ambiguous printer → refused plan, exit 2, nothing written
     assert main([*argv, "a.ezpl:1-2"]) == 2
     assert "choose a printer" in capsys.readouterr().out and not site["t1"].exists()

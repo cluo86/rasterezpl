@@ -110,7 +110,8 @@ Your own page beside the job files can drive it, same origin — `GET /api/` lis
 [docs/API.md](docs/API.md) documents them. The same plan-then-print from the command line:
 
 ```
-rasterezpl printcart --root ~/labels a/b.ezpl:1-4,7 c/d.ezpl --dry-run   # the plan; drop --dry-run to send
+rasterezpl printcart a/b.ezpl:1-4,7 c/d.ezpl --root ~/labels --dry-run   # the plan; drop --dry-run to send
+rasterezpl printcart composed/labels-3835b428.ezpl --dry-run             # from the served root itself
 ```
 
 ### Your own labels

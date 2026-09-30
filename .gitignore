@@ -9,3 +9,4 @@ build/
 *.egg-info/
 *.ezpl
 *.png
+!docs/*.png
