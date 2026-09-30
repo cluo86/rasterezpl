@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2 — 2026-09-30
+
+- `status` on a file-spool printer answers `00 file spool (writable)` instead of raising; an lp: queue says it
+  has no status here. The page's *check* works on the demo printers.
+
 ## 0.5.1 — 2026-09-30
 
 - The planner tells the same stock at two resolutions apart: a job matches a media only if its blocks lie inside

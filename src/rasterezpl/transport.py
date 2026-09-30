@@ -14,6 +14,7 @@ The printer only ever sees a byte stream; it does not know what produced it. Tha
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 from pathlib import Path
@@ -177,13 +178,21 @@ def status_usb(spec: str = "") -> str:
 
 
 def status(target: str) -> str:
-    """``~S,CHECK`` for a tcp:// or usb: target; '' when the printer is silent; raises for other targets."""
+    """``~S,CHECK`` for a tcp:// or usb: target ('' when the printer is silent). A file spool is always ready:
+    ``00 file spool`` when its directory can take the file, else a message. An lp: queue has no status here."""
     if target.startswith("tcp://"):
         host, _, port = target[6:].partition(":")
         return status_tcp(host, int(port) if port else 9100)
     if target.startswith("usb:"):
         return status_usb(target[4:])
-    raise ValueError(f"status needs a tcp:// or usb: target, not {target!r}")
+    if target.startswith("lp:"):
+        return f"lp queue {target[3:]!r}: no status over lp (lpstat knows)"
+    from pathlib import Path
+
+    d = Path(target).expanduser().parent
+    if d.is_dir() and os.access(d, os.W_OK):
+        return "00 file spool (writable)"
+    return f"file spool: {d} is not a writable directory"
 
 
 def send(

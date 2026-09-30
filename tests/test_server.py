@@ -89,6 +89,8 @@ def test_pages_printers_files_and_static(site):
     assert st == 200 and body == (site["root"] / "jobs" / "a.ezpl").read_bytes()
     st, _, body = _get(f"{b}/note.txt")
     assert st == 200 and b"static file" in body
+    st, _, body = _get(f"{b}/api/printers/filep/status")  # a file spool answers ready, never an error
+    assert json.loads(body)["status"].startswith("00 file spool")
     st, ct, body = _get(f"{b}/api/proof?file=jobs/a.ezpl&label=3")
     assert st == 200 and ct == "image/png" and body.startswith(b"\x89PNG")
 
