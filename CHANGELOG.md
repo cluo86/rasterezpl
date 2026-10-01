@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 — 2026-10-01
+
+- The clear-laminate layouts take the full-label media themselves: composed on the standard media, the
+  composer switches to the stock's `*-full` variant (or refuses clearly when the registry has none), and the
+  page switches the media select when such a layout is chosen. On the white-block media the layout had put the
+  code on the white and refused the sample text.
+
 ## 0.8.0 — 2026-10-01
 
 - Printing on the clear laminate: the `panduit-s150x225vaty-2up-full` preset allows the whole die-cut label;

@@ -40,6 +40,7 @@ class Layout:
     draw: Callable  # (w, h, lines, font, px, align, fit, image=None, qr=None) -> PIL image
     needs_image: bool = False
     needs_qr: bool = False
+    needs_full: bool = False  # prints on the whole label: needs a media whose print area is the full die-cut
 
 
 def _canvas(w: int, h: int):
@@ -252,8 +253,12 @@ LAYOUTS["image"] = Layout("image", "", image_only, needs_image=True)
 LAYOUTS["badge"] = Layout("badge", "Jane Doe\nC3000071A605\nAcme Fibre", badge, needs_qr=True)
 LAYOUTS["qr-left"] = Layout("qr-left", "Jane Doe\nC3000071A605", qr_left, needs_qr=True)
 LAYOUTS["qr"] = Layout("qr", "", qr_only, needs_qr=True)
-LAYOUTS["clear-qr"] = Layout("clear-qr", "Jane Doe\nC3000071A605\nAcme Fibre", clear_qr, needs_qr=True)
-LAYOUTS["clear-image"] = Layout("clear-image", "ASSET 0042\nproperty of ACME", clear_image, needs_image=True)
+LAYOUTS["clear-qr"] = Layout(
+    "clear-qr", "Jane Doe\nC3000071A605\nAcme Fibre", clear_qr, needs_qr=True, needs_full=True
+)
+LAYOUTS["clear-image"] = Layout(
+    "clear-image", "ASSET 0042\nproperty of ACME", clear_image, needs_image=True, needs_full=True
+)
 
 
 def render_label(

@@ -165,6 +165,25 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
     if spec.media not in reg.media:
         raise ValueError(f"unknown media {spec.media!r}")
     m = reg.media[spec.media]
+    from .layouts import LAYOUTS
+
+    if spec.layout in LAYOUTS and LAYOUTS[spec.layout].needs_full and m.areas_in != m.labels_in:
+        # the layout prints on the whole label: take the full-label variant of the same stock, if the registry
+        # has one (same page, same dots, the printer that holds the stock takes it)
+        full = next(
+            (
+                n
+                for n, mm in reg.media.items()
+                if mm.same_stock(m) and mm.labels_in and mm.areas_in == mm.labels_in
+            ),
+            None,
+        )
+        if full is None:
+            raise ValueError(
+                f"layout {spec.layout!r} prints on the whole label: it needs a full-label media (one whose print "
+                f"area is the die-cut), and the registry has none for the stock of {spec.media!r}"
+            )
+        spec.media, m = full, reg.media[full]
     font = find_font(spec.font) if spec.font else None
     if font is None and root is not None and spec.font:
         cand = root / FONTS_DIR / spec.font

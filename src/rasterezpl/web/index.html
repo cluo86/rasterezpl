@@ -23,7 +23,7 @@ pre{font-family:ui-monospace,Menlo,monospace;font-size:12px;margin:4px 0}
 <div id="cart"></div>
 
 <h2>Compose — your own labels</h2>
-<div class="muted">Type labels (one per block, blank line between; <code>{n}</code> = running number), or paste rows with a header and a template, or open an Easy-Mark <code>.pemx</code>. Pick a layout (a decoration around the text; <em>sample</em> fills its example) and a face — the bundled faces render the same everywhere. A picture (PNG, JPEG, or SVG when the server can render it) goes on the <em>logo</em>, <em>logo-top</em> and <em>image</em> layouts; the <em>badge</em>, <em>qr-left</em> and <em>qr</em> layouts encode the QR data, one code per label. Preview is the exact print; compose saves a job file under <code>composed/</code> and puts it in the cart.</div>
+<div class="muted">Type labels (one per block, blank line between; <code>{n}</code> = running number), or paste rows with a header and a template, or open an Easy-Mark <code>.pemx</code>. Pick a layout (a decoration around the text; <em>sample</em> fills its example) and a face — the bundled faces render the same everywhere. A picture (PNG, JPEG, or SVG when the server can render it) goes on the <em>logo</em>, <em>logo-top</em> and <em>image</em> layouts; the <em>badge</em>, <em>qr-left</em> and <em>qr</em> layouts encode the QR data, one code per label; <em>clear-qr</em> and <em>clear-image</em> print on the WHOLE self-laminating label (the full-label media is picked for you) — for a tag stuck flat, not one that wraps. Preview is the exact print; compose saves a job file under <code>composed/</code> and puts it in the cart.</div>
 <table><tr><td>
  media <select id="c_media"></select> font <select id="c_font"></select> pt <input type="text" id="c_pt" size="4" value="5.4">
  layout <select id="c_layout"></select> <button onclick="cSample()" title="fill the text with this layout's sample">sample</button>
@@ -142,12 +142,24 @@ async function cCompose() {
   $("c_note").textContent = ""; $("c_note").className = "";
   try {
     const j = await api("/api/compose", cSpec());
-    $("c_note").innerHTML = `<span class="ok">${j.labels} labels → <code>${esc(j.file)}</code></span>`;
+    $("c_note").innerHTML = `<span class="ok">${j.labels} labels → <code>${esc(j.file)}</code> (${esc(j.media)})</span>`;
     await loadFiles(); CART.push({file: j.file, labels: ""}); saveCart(); renderCart();
   } catch (e) { $("c_note").textContent = e.message; $("c_note").className = "bad"; }
 }
 let LAYOUTS = [];
 function cSample() { const l = LAYOUTS.find(x => x.name === $("c_layout").value); if (l) { $("c_text").value = l.sample; $("c_rows").value = ""; if (l.qr_sample) $("c_qr").value = l.qr_sample; } }
+function cLayoutChanged() {
+  const l = LAYOUTS.find(x => x.name === $("c_layout").value); if (!l) return;
+  const opts = [...$("c_media").options];
+  if (l.needs_full) {  // the whole-label layouts: pick the full-label variant of the chosen stock
+    const cur = $("c_media").value, full = opts.find(o => o.value === cur + "-full") || opts.find(o => o.value.endsWith("-full"));
+    if (full) { $("c_media").value = full.value; $("c_note").textContent = `media switched to ${full.value}: this layout prints on the whole label`; $("c_note").className = "muted"; }
+  } else if ($("c_media").value.endsWith("-full")) {
+    const std = opts.find(o => o.value === $("c_media").value.replace(/-full$/, ""));
+    if (std) { $("c_media").value = std.value; $("c_note").textContent = `media switched back to ${std.value}`; $("c_note").className = "muted"; }
+  }
+}
+$("c_layout").onchange = cLayoutChanged;
 async function loadCompose() {
   const [fonts, media, v, layouts] = await Promise.all([api("/api/fonts"), api("/api/media"), api("/api/version"), api("/api/layouts")]);
   LAYOUTS = layouts;
@@ -162,7 +174,7 @@ $("c_image").onchange = async ev => {
   const f = ev.target.files[0]; if (!f) { IMAGE = null; $("c_imgnote").textContent = ""; return; }
   const bytes = new Uint8Array(await f.arrayBuffer()); let s = ""; for (const b of bytes) s += String.fromCharCode(b);
   IMAGE = btoa(s); $("c_imgnote").textContent = `${f.name} (${Math.round(f.size / 1024)} KB) — pick a picture layout`;
-  if (!["logo", "logo-top", "image"].includes($("c_layout").value)) { $("c_layout").value = "logo"; cSample(); }
+  if (!["logo", "logo-top", "image", "clear-image"].includes($("c_layout").value)) { $("c_layout").value = "logo"; cLayoutChanged(); cSample(); }
 };
 $("c_pemx").onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;

@@ -82,3 +82,30 @@ def test_full_label_job_plans_onto_the_standard_printer(tmp_path):
     assert rows[0].ok and rows[0].printer == "p300" and rows[0].media == "panduit-s150x225vaty-2up-full"
     rows = plan(root, r, [{"file": "clear.ezpl", "printer": "p203"}])
     assert not rows[0].ok and "p203 holds" in rows[0].refused
+
+
+def test_clear_layout_switches_to_the_full_media_or_refuses(tmp_path):
+    reg = load(None)
+    spec = Spec.from_dict(
+        {
+            "media": "panduit-s150x225vaty-2up",
+            "font": "Inter Bold",
+            "pt": 5.4,
+            "layout": "clear-qr",
+            "text": "Jane Doe\nC3000071A605\nAcme Fibre",
+            "qr": "C3000071A605",
+        }
+    )
+    data, m, _, _ = render(reg, spec)  # the standard media was chosen: the full variant is taken instead
+    assert m is rz.PANDUIT_S150X225VATY_2UP_FULL and spec.media == "panduit-s150x225vaty-2up-full"
+    assert rz.blocks_outside_areas(data, rz.PANDUIT_S150X225VATY_2UP) and not rz.blocks_outside_areas(data, m)
+    # a registry whose only media for the stock is the white block: a clear refusal, not a label on the white
+    regf = tmp_path / "r.yaml"
+    regf.write_text(
+        "media:\n  only-white:\n    dpi: 300\n    width_mm: 82.55\n    length_mm: 57.15\n    gap_mm: 3.175\n"
+        "    areas_in: [[0.125, 0.063, 1.5, 0.75]]\n    labels_in: [[0.125, 0.0, 1.5, 2.25]]\n"
+    )
+    r = load(str(regf))
+    r = type(r)(r.path, {"only-white": r.media["only-white"]}, r.printers)  # presets removed: no full variant
+    with pytest.raises(ValueError, match="full-label media"):
+        render(r, Spec.from_dict({**spec.__dict__, "media": "only-white"}))
