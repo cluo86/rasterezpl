@@ -37,7 +37,22 @@ PANDUIT_S150X225VATY_2UP_203 = Media(
     labels_in=PANDUIT_S150X225VATY_2UP.labels_in,
 )
 
+# the same stock with the WHOLE die-cut label as the print area — the clear laminate takes thermal-transfer ink
+# just as the white block does, so a flat-stuck label (an asset tag, a badge) can carry a large QR or picture on
+# the clear two thirds and its text on the white third. Same page, same dots, same printer: only where blocks
+# may go differs. Not for a label that will be wrapped — the clear part becomes the wrap.
+PANDUIT_S150X225VATY_2UP_FULL = Media(
+    name="Panduit S150X225VATY (2 across, 300 dpi, full label incl. the clear laminate)",
+    dpi=300,
+    width_mm=PANDUIT_S150X225VATY_2UP.width_mm,
+    length_mm=PANDUIT_S150X225VATY_2UP.length_mm,
+    gap_mm=PANDUIT_S150X225VATY_2UP.gap_mm,
+    areas_in=PANDUIT_S150X225VATY_2UP.labels_in,
+    labels_in=PANDUIT_S150X225VATY_2UP.labels_in,
+)
+
 PRESETS: dict[str, Media] = {
     "panduit-s150x225vaty-2up": PANDUIT_S150X225VATY_2UP,
     "panduit-s150x225vaty-2up-203": PANDUIT_S150X225VATY_2UP_203,
+    "panduit-s150x225vaty-2up-full": PANDUIT_S150X225VATY_2UP_FULL,
 }

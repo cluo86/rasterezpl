@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from . import __version__
 from .compose import Spec, compose, fonts_available, import_pemx, preview_png, read_spec
-from .jobs import LOG_NAME, list_files, plan, proof_png, read_log, run
+from .jobs import LOG_NAME, holds, list_files, plan, proof_png, read_log, run
 from .registry import Registry, load
 
 ENDPOINTS: list[tuple[str, str, str]] = [
@@ -168,7 +168,9 @@ class Handler(SimpleHTTPRequestHandler):
                         "width_mm": md.width_mm,
                         "length_mm": md.length_mm,
                         "areas": len(md.areas_in),
-                        "printers": [pr.name for pr in self.reg.printers.values() if pr.media_name == n],
+                        "printers": [
+                            pr.name for pr in self.reg.printers.values() if holds(pr, [n], self.reg)
+                        ],
                     }
                     for n, md in self.reg.media.items()
                 ]

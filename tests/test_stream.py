@@ -125,8 +125,9 @@ def test_header_and_media_match():
     m203 = rz.PANDUIT_S150X225VATY_2UP_203
     j203 = rz.job(m203, [[img(*m203.area_px(0)[2:], [(0, 0)]), None]])
     assert rz.matching_media(j203, both) == ["p300", "p203"]
-    with pytest.raises(ValueError):
-        rz.match_media(j203, both)
+    # since 0.8.0 match_media uses the geometry too: the small 203 dpi job's blocks fall outside the 300 dpi
+    # areas, so the 203 media is the one answer (the planner has done this since 0.5.1)
+    assert rz.match_media(j203, both)[0] == "p203"
     with pytest.raises(ValueError):
         rz.match_media(data, {"p": rz.PANDUIT_S150X225VATY_2UP})
     with pytest.raises(ValueError):
@@ -180,3 +181,20 @@ def test_header_of_skips_a_registration_prefix():
     data = rz.job(m, [[None, None]])
     assert rz.header_of(data) == rz.header_of(b"^R3\r~Q-9\r" + data) == (57, 3, 83)
     assert rz.header_of(b"garbage" + data) is None
+
+
+def test_tightest_fit_prefers_the_white_block_over_the_whole_label():
+    m, full = rz.PANDUIT_S150X225VATY_2UP, rz.PANDUIT_S150X225VATY_2UP_FULL
+    assert rz.tightest(["panduit-s150x225vaty-2up", "panduit-s150x225vaty-2up-full"], rz.PRESETS) == [
+        "panduit-s150x225vaty-2up"
+    ]
+    assert rz.tightest(["panduit-s150x225vaty-2up-full"], rz.PRESETS) == ["panduit-s150x225vaty-2up-full"]
+    # a job on the white block names the standard media; one on the laminate names the full variant
+    from PIL import Image
+
+    _, _, aw, ah = m.area_px(0)
+    white = rz.job(m, [[Image.new("L", (aw, ah), 0), None]])
+    assert rz.match_media(white, rz.PRESETS)[0] == "panduit-s150x225vaty-2up"
+    _, _, fw, fh = full.area_px(0)
+    whole = rz.job(full, [[Image.new("L", (fw, fh), 0), None]])
+    assert rz.match_media(whole, rz.PRESETS)[0] == "panduit-s150x225vaty-2up-full"

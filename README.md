@@ -97,6 +97,8 @@ serve the same root with your own registry — `rasterezpl serve --root <demo di
 
 ![the QR layouts: a code with the lines beside it, and a code alone](docs/demo-qr.png)
 
+![the whole label printed: text on the white third, a large QR or the mark on the clear laminate](docs/demo-clear-laminate.png)
+
 ## Print from the browser
 
 ```
@@ -131,6 +133,12 @@ Pictures print too: a PNG or JPEG, or an SVG when the machine has `cairosvg` or 
 turned into the head's one-bit image (dithered, or thresholded for a two-tone mark). Three layouts take one:
 `logo` (picture left, text beside — asset tags), `logo-top`, and `image` alone. The demo draws a placeholder
 mark; put your own logo on a label from the page and it never leaves your machine.
+
+A self-laminating label can be printed whole: the clear laminate takes the ribbon's ink like the white block.
+The `panduit-s150x225vaty-2up-full` media allows the entire die-cut label, and the `clear-qr` / `clear-image`
+layouts put the text on the white third and a large code or picture on the clear two thirds — for a tag stuck
+flat, not one that wraps. The same printer takes it: a printer holds a stock, and variants of that stock at the
+same dpi differ only in where blocks may go.
 
 QR codes are built in (segno, pure Python): the `badge` layout puts a code across the top and the lines below —
 a check-in badge from a CSV of names and ids is one compose, `qr` set to `{id}` — with `qr-left` for narrow

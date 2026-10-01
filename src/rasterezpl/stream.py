@@ -231,10 +231,29 @@ def matching_media(data: bytes, medias: dict[str, Media]) -> list[str]:
     ]
 
 
+def tightest(names: list[str], medias: dict[str, Media]) -> list[str]:
+    """Among media of the SAME stock at the same dpi, keep the one with the smallest print area — the most
+    specific description of where the job prints (a job on the white block of a self-laminating label fits the
+    whole-label variant too; the white block is the answer). Different stocks stay side by side."""
+    keep: list[str] = []
+    for n in names:
+        m = medias[n]
+        area = sum(w * h for _, _, w, h in m.areas_in)
+        rival = next((k for k in keep if medias[k].same_stock(m)), None)
+        if rival is None:
+            keep.append(n)
+        elif sum(w * h for _, _, w, h in medias[rival].areas_in) > area:
+            keep[keep.index(rival)] = n
+    return keep
+
+
 def match_media(data: bytes, medias: dict[str, Media]) -> tuple[str, Media]:
-    """The one media a job was written for (see matching_media); ambiguity is an error — name the media."""
+    """The one media a job was written for: the header's stock, the geometry its blocks fit, the tightest print
+    area among variants of that stock; ambiguity beyond that is an error — name the media."""
     hits = matching_media(data, medias)
-    if len(hits) != 1:
+    fits = [n for n in hits if not blocks_outside_areas(data, medias[n])] or hits
+    fits = tightest(fits, medias)
+    if len(fits) != 1:
         h = header_of(data) or (0, 0, 0)
-        raise ValueError(f"header ^Q{h[0]},{h[1]} ^W{h[2]} matches {len(hits)} media: {hits}")
-    return hits[0], medias[hits[0]]
+        raise ValueError(f"header ^Q{h[0]},{h[1]} ^W{h[2]} matches {len(fits)} media: {fits}")
+    return fits[0], medias[fits[0]]

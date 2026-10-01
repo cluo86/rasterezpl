@@ -24,11 +24,12 @@ def test_bundled_fonts_resolve_by_name():
 
 def test_every_layout_renders_its_sample_in_every_face():
     m = rz.PANDUIT_S150X225VATY_2UP
-    _, _, w, h = m.area_px(0)
+    full = rz.PANDUIT_S150X225VATY_2UP_FULL
     from rasterezpl.images import placeholder_logo
 
     mark = placeholder_logo()
     for lay in LAYOUTS.values():
+        _, _, w, h = (full if lay.name.startswith("clear-") else m).area_px(0)
         for face, path in bundled_fonts().items():
             px = rz.pt_to_px(6 if lay.name in ("banner", "ticket") else 5, m.dpi)
             im = render_label(
@@ -84,4 +85,12 @@ def test_demo_ships_the_template_sheet(tmp_path):
     info = build(tmp_path / "d")
     assert "templates/layouts.ezpl" in info["written"]
     data = (tmp_path / "d" / "templates" / "layouts.ezpl").read_bytes()
-    assert rz.count_labels(data) == (len(LAYOUTS) + 1) // 2  # two layouts per web row
+    on_sheet = [
+        lay for lay in LAYOUTS if not lay.startswith("clear-")
+    ]  # the clear-* ones have their own sheet
+    assert rz.count_labels(data) == (len(on_sheet) + 1) // 2  # two layouts per web row
+    clear = (tmp_path / "d" / "templates" / "clear-laminate.ezpl").read_bytes()
+    assert (
+        rz.count_labels(clear) == 1
+        and rz.match_media(clear, rz.PRESETS)[0] == "panduit-s150x225vaty-2up-full"
+    )

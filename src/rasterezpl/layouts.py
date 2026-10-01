@@ -14,6 +14,9 @@ no-clip / fit rules hold inside every layout. Each layout carries a SAMPLE text 
     logo-top  the picture across the top (about 45 % of the height), the text below
     image     the picture alone, fitted to the label
 
+    clear-qr    for a self-laminating label printed WHOLE (media *-full): the lines on the white block (the leading
+                third), the QR as large as fits on the clear two thirds — a flat-stuck asset tag or badge
+    clear-image the same with a picture on the clear part
     badge     a QR code across the top (square, as large as fits), the lines centred below — check-in badges
     qr-left   the QR on the left, the lines beside it — narrow stock
     qr        the QR alone
@@ -202,6 +205,37 @@ def qr_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=Non
     return out
 
 
+WHITE_FRAC = 0.75 / 2.25  # the print-on block of the S150X225VATY: the leading third of the label
+
+
+def _clear(w, h, lines, font, px, align, fit, picture):
+    """Text on the white third, `picture` (a one-bit image already fitted) centred on the clear two thirds."""
+    out, _ = _canvas(w, h)
+    white_h = int(h * WHITE_FRAC)
+    pad = max(3, min(w, h) // 40)
+    _text_into(out, (pad, pad, w - 2 * pad, white_h - 2 * pad), lines, font, px, align, fit)
+    out.paste(picture, ((w - picture.width) // 2, white_h + (h - white_h - picture.height) // 2))
+    return out
+
+
+def clear_qr(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+    from .images import qr_image
+
+    white_h = int(h * WHITE_FRAC)
+    pad = max(3, min(w, h) // 40)
+    box = min(w, h - white_h) - 2 * pad
+    return _clear(w, h, lines, font, px, align, fit, qr_image(_need_qr(qr, "clear-qr"), box))
+
+
+def clear_image(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+    from .images import to_bitmap
+
+    white_h = int(h * WHITE_FRAC)
+    pad = max(3, min(w, h) // 40)
+    pic = to_bitmap(_need(image, "clear-image"), w - 2 * pad, h - white_h - 2 * pad)
+    return _clear(w, h, lines, font, px, align, fit, pic)
+
+
 LAYOUTS: dict[str, Layout] = {
     "plain": Layout("plain", "rasterezpl\nplain text\nthe default", plain),
     "framed": Layout("framed", "FRAMED\ndouble rule\nrounded corners", framed),
@@ -218,6 +252,8 @@ LAYOUTS["image"] = Layout("image", "", image_only, needs_image=True)
 LAYOUTS["badge"] = Layout("badge", "Jane Doe\nC3000071A605\nAcme Fibre", badge, needs_qr=True)
 LAYOUTS["qr-left"] = Layout("qr-left", "Jane Doe\nC3000071A605", qr_left, needs_qr=True)
 LAYOUTS["qr"] = Layout("qr", "", qr_only, needs_qr=True)
+LAYOUTS["clear-qr"] = Layout("clear-qr", "Jane Doe\nC3000071A605\nAcme Fibre", clear_qr, needs_qr=True)
+LAYOUTS["clear-image"] = Layout("clear-image", "ASSET 0042\nproperty of ACME", clear_image, needs_image=True)
 
 
 def render_label(

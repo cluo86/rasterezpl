@@ -32,6 +32,7 @@ from .stream import (
     parse_blocks,
     parse_selection,
     select_labels,
+    tightest,
 )
 from .transport import send
 
@@ -91,8 +92,14 @@ def written_for(data: bytes, reg: Registry) -> tuple[list[str], list[str]]:
     media that match the header only — the same stock at another dpi places its blocks elsewhere, so a job
     for the 203 dpi variant is not a job for the 300 dpi one."""
     names = matching_media(data, reg.media)
-    fits = [n for n in names if not blocks_outside_areas(data, reg.media[n])]
-    return fits, [n for n in names if n not in fits]
+    fits = tightest([n for n in names if not blocks_outside_areas(data, reg.media[n])], reg.media)
+    return fits, tightest([n for n in names if n not in fits], reg.media)
+
+
+def holds(pr, names: list[str], reg: Registry) -> bool:
+    """Whether a printer can take a job that fits one of `names`: its media is one of them, or the same stock at
+    the same dpi as one of them (a variant that only differs in where blocks are allowed)."""
+    return any(n == pr.media_name or pr.media.same_stock(reg.media[n]) for n in names)
 
 
 def list_files(root: Path, reg: Registry) -> list[dict]:
@@ -112,7 +119,7 @@ def list_files(root: Path, reg: Registry) -> list[dict]:
         row["blocks"] = count_labels(data)
         row["labels"] = row["blocks"] * per
         row["media"] = names
-        row["printers"] = [pr.name for pr in reg.printers.values() if pr.media_name in names]
+        row["printers"] = [pr.name for pr in reg.printers.values() if holds(pr, names, reg)]
         if not names and header_only:
             row["error"] = (
                 f"written for {header_only} at a geometry no media here has (blocks outside the print areas)"
@@ -149,7 +156,7 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
             if pr is None:
                 row.refused = f"unknown printer {given!r}"
                 continue
-            if pr.media_name not in names:
+            if not holds(pr, names, reg):
                 other = (
                     f" (same stock at another dpi: this file fits {names})"
                     if pr.media_name in header_only
@@ -161,7 +168,7 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
                 )
                 continue
         else:
-            cands = [pr for pr in reg.printers.values() if pr.media_name in names]
+            cands = [pr for pr in reg.printers.values() if holds(pr, names, reg)]
             if not cands:
                 held = [
                     f"{pr.name} holds {pr.media_name}"
@@ -183,8 +190,13 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
                 )
                 continue
             pr = cands[0]
-        row.printer, row.media = pr.name, pr.media_name
-        m = pr.media
+        row.printer = pr.name
+        row.media = (
+            pr.media_name
+            if pr.media_name in names
+            else next(n for n in names if pr.media.same_stock(reg.media[n]))
+        )
+        m = reg.media[row.media]  # the variant the file was written for (same page and dots as the printer's)
         row.total = count_labels(data) * m.labels_per_block
         if not spec:
             spec = f"1-{row.total}" if row.total > 1 else "1"
@@ -249,7 +261,9 @@ def run(
     notes = []
     for r in rows:
         pr = reg.printers[r.printer or ""]
-        data = select_labels(confine(root, r.file).read_bytes(), r.labels, pr.media)
+        data = select_labels(
+            confine(root, r.file).read_bytes(), r.labels, reg.media[r.media or pr.media_name]
+        )
         target = to or pr.transport
         note = send(data, target, pr.media, pr.offset_in)
         notes.append(f"{r.file} labels {r.labels} → {note}")

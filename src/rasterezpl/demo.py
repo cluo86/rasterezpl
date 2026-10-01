@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .images import placeholder_logo
 from .layouts import LAYOUTS, render_label
-from .presets import PANDUIT_S150X225VATY_2UP
+from .presets import PANDUIT_S150X225VATY_2UP, PANDUIT_S150X225VATY_2UP_FULL
 from .registry import load
 from .stream import job
 from .text import bundled_fonts, find_font, pt_to_px, render_text
@@ -64,6 +64,8 @@ What is here
                            layouts logo / logo-top / image with the placeholder mark, the QR layouts badge / qr-left /
                            qr with a sample code — each with its sample
                            text, set in the bundled faces Inter, Inter Bold, JetBrains Mono, Bebas Neue
+  templates/clear-laminate.ezpl the clear-qr / clear-image layouts on the FULL-label media variant: text on the
+                           white third, a big QR or picture on the clear two thirds (a flat-stuck tag)
   images/placeholder-logo.png   the stand-in mark; put your own PNG / SVG on a label from the page
   patterns/checker.ezpl    a 16-dot checkerboard filling both print areas — dot-exact geometry check
   patterns/stripes.ezpl    diagonal stripes, 1 dot wide, 8 apart — a head/ribbon check
@@ -187,6 +189,8 @@ def build(root: Path) -> dict:
     written.append("images/placeholder-logo.png")
     tpl_imgs = []
     for lay in LAYOUTS.values():
+        if lay.name.startswith("clear-"):
+            continue  # on their own sheet, the full-label media
         fpath = faces[face_for.get(lay.name, "Inter")]
         big = lay.name in ("banner", "ticket")
         tpl_imgs.append(
@@ -206,6 +210,31 @@ def build(root: Path) -> dict:
         job(pand, [tpl_imgs[i : i + 2] for i in range(0, len(tpl_imgs), 2)])
     )
     written.append("templates/layouts.ezpl")
+    # the clear-laminate layouts, on the full-label variant of the same stock (same printer, whole label allowed)
+    full = PANDUIT_S150X225VATY_2UP_FULL
+    _, _, fw, fh = full.area_px(0)
+    clear_imgs = [
+        render_label(
+            fw,
+            fh,
+            LAYOUTS["clear-qr"].sample.split("\n"),
+            faces["Inter Bold"],
+            pt_to_px(6, full.dpi),
+            "clear-qr",
+            qr="C3000071A605",
+        ),
+        render_label(
+            fw,
+            fh,
+            LAYOUTS["clear-image"].sample.split("\n"),
+            faces["Inter Bold"],
+            pt_to_px(6, full.dpi),
+            "clear-image",
+            image=mark,
+        ),
+    ]
+    (root / "templates" / "clear-laminate.ezpl").write_bytes(job(full, [clear_imgs]))
+    written.append("templates/clear-laminate.ezpl")
     (root / "patterns" / "checker.ezpl").write_bytes(job(pand, [[_checker(aw, ah), _checker(aw, ah, 8)]]))
     (root / "patterns" / "stripes.ezpl").write_bytes(job(pand, [[_stripes(aw, ah), _stripes(aw, ah, 4)]]))
     (root / "patterns" / "gradient.ezpl").write_bytes(job(pand, [[_gradient(aw, ah), _gradient(aw, ah)]]))

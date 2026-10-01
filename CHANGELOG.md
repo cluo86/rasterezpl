@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 — 2026-10-01
+
+- Printing on the clear laminate: the `panduit-s150x225vaty-2up-full` preset allows the whole die-cut label;
+  layouts `clear-qr` and `clear-image` put the text on the white third and a large QR or picture on the clear
+  two thirds. A printer holds a stock: variants at the same dpi (`Media.same_stock`) print on it, so the full
+  variant needs no registry change. The demo ships `templates/clear-laminate.ezpl`.
+- `match_media` uses the geometry (blocks inside the print areas) and, among variants of one stock, the
+  tightest print area (`tightest`): a job on the white block names the standard media, one on the laminate the
+  full variant; the 203 vs 300 dpi case resolves by geometry instead of erroring.
+
 ## 0.7.0 — 2026-09-30
 
 - QR codes (`images.qr_image`, segno): layouts `badge` (code across the top, lines below — check-in badges),

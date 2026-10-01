@@ -66,6 +66,17 @@ class Media:
     def length_px(self) -> int:
         return round(self.length_mm / 25.4 * self.dpi)
 
+    def same_stock(self, other: Media) -> bool:
+        """The same physical stock at the same resolution — identical page, identical dots — so a printer loaded
+        with one prints a job written for the other; the two may differ only in where blocks are allowed
+        (e.g. the print-on block vs the whole label of a self-laminating stock)."""
+        return (
+            self.dpi == other.dpi
+            and abs(self.width_mm - other.width_mm) < 0.01
+            and abs(self.length_mm - other.length_mm) < 0.01
+            and abs(self.gap_mm - other.gap_mm) < 0.01
+        )
+
     @property
     def labels_per_block(self) -> int:
         return max(1, len(self.areas_in))

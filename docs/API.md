@@ -18,7 +18,8 @@ Paths in requests are relative to the served root and confined to it; only `.ezp
   so a page of your own can live beside the jobs and call this API on the same origin.
 - **Registry** — printers and media from `printers.yaml` (see the README). A printer has a transport, a media
   and a registration offset. A job file matches a media by its header and geometry; it prints only on a printer
-  holding that media.
+  holding that media — or the same stock at the same dpi (a variant that only differs in where blocks may go,
+  such as the whole label of a self-laminating stock instead of its white block).
 - **Plan** — a cart of `{file, labels, printer?}` entries resolved to rows: labels selected, count, the printer
   (given, or the one printer holding the file's media), or a refusal. Planning never sends.
 - **Print** — a clean plan sent as one job per file through the printer's record; refused entirely while any row
@@ -54,7 +55,7 @@ Mono, Bebas Neue; they render the same on every machine), then the known candida
 
 ### `GET /api/layouts`
 The label layouts, each with a sample text: `[{"name": "banner", "sample": "PATCH PANEL A\nrack 12 · U31\n…"}, …]`.
-Layouts: `plain`, `framed`, `banner`, `sidebar`, `corners`, `ticket`; with a picture `logo`, `logo-top`, `image`; with a QR `badge`, `qr-left`, `qr`. Each entry also says `needs_image` / `needs_qr` and gives a `qr_sample`.
+Layouts: `plain`, `framed`, `banner`, `sidebar`, `corners`, `ticket`; with a picture `logo`, `logo-top`, `image`; with a QR `badge`, `qr-left`, `qr`; for a self-laminating label printed whole (a `*-full` media) `clear-qr`, `clear-image` — text on the white block, the code or picture on the clear laminate. Each entry also says `needs_image` / `needs_qr` and gives a `qr_sample`.
 
 ### `GET /api/files`
 Every job under the root.
