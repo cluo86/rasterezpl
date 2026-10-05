@@ -56,6 +56,10 @@ def test_layouts_and_composer():
     # the bars take the upper part, the text sits below them
     assert im.crop((0, 0, w, h // 4)).getextrema() == (0, 255)
     assert im.crop((0, 3 * h // 4, w, h)).getextrema() == (0, 255)
+    below = render_label(w, h, [RACK], inter, 100, "barcode-below", qr=RACK)
+    assert below.size == (w, h) and below.getextrema() == (0, 255)
+    assert below.crop((0, 3 * h // 4, w, h)).getextrema() == (0, 255)  # bars in the lower part
+    assert below.crop((0, 0, w, h // 4)).getextrema() == (0, 255)  # text in the upper part
     only = render_label(w, h, [""], inter, 100, "barcode-only", qr=RACK)
     assert only.size == (w, h) and only.crop((0, h - 20, w, h)).getextrema() == (0, 255)
     with pytest.raises(ValueError, match="needs QR"):
@@ -99,5 +103,6 @@ def test_round_trip_through_a_decoder():
         assert [(str(h.format), h.text) for h in hits] == [("Code 128", text)], text
     # the layout's label decodes too, text and bars together
     inter = bundled_fonts()["Inter Bold"]
-    lab = render_label(1180, 300, [RACK], inter, 90, "barcode", qr=RACK)
-    assert [h.text for h in zx.read_barcodes(lab)] == [RACK]
+    for lay in ("barcode", "barcode-below"):
+        lab = render_label(1180, 300, [RACK], inter, 90, lay, qr=RACK)
+        assert [h.text for h in zx.read_barcodes(lab)] == [RACK]

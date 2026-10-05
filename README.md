@@ -145,8 +145,8 @@ a check-in badge from a CSV of names and ids is one compose, `qr` set to `{id}` 
 stock and `qr` for the code alone.
 
 Code 128 barcodes are built in too (encoded here, no dependency): the `barcode` layout draws the bars across the
-top and the lines below — the rack or asset label whose barcode scans to exactly the text under it — and
-`barcode-only` the bars alone. They encode the same `qr` data (a template such as `{rack}`), at the widest
+top and the lines below, `barcode-below` the lines on top and the bars under them — the rack or asset label
+whose barcode scans to exactly its text — and `barcode-only` the bars alone. They encode the same `qr` data (a template such as `{rack}`), at the widest
 whole-dot module that fits the label, and refuse a code that would print finer than two dots per module.
 
 

@@ -62,7 +62,7 @@ What is here
   text/flags.ezpl          three tags on the 92 x 34 mm flag media
   templates/layouts.ezpl   every layout — framed, banner, sidebar, corners, ticket, plain, and the picture
                            layouts logo / logo-top / image with the placeholder mark, the QR layouts badge / qr-left /
-                           qr with a sample code, the Code 128 layouts barcode / barcode-only — each with its sample
+                           qr with a sample code, the Code 128 layouts barcode / barcode-below / barcode-only — each with its sample
                            text, set in the bundled faces Inter, Inter Bold, JetBrains Mono, Bebas Neue
   templates/clear-laminate.ezpl the clear-qr / clear-image layouts on the FULL-label media variant: text on the
                            white third, a big QR or picture on the clear two thirds (a flat-stuck tag)
@@ -181,6 +181,7 @@ def build(root: Path) -> dict:
         "qr-left": "JetBrains Mono",
         "qr": "Inter",
         "barcode": "Inter Bold",
+        "barcode-below": "Inter Bold",
         "barcode-only": "Inter",
     }
     _, _, aw, ah = pand.area_px(0)

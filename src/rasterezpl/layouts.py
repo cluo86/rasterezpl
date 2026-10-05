@@ -22,6 +22,7 @@ no-clip / fit rules hold inside every layout. Each layout carries a SAMPLE text 
     qr        the QR alone
     barcode   a Code 128 barcode across the top (the widest module that fits), the lines centred below — the
               rack / asset label whose barcode scans to the text printed under it
+    barcode-below the lines on top, the Code 128 under them — the rack label as Oracle's data halls carry it
     barcode-only  the Code 128 alone, as tall as the label
 
 The three picture layouts take an ``image`` (a Pillow 'L' image, see :mod:`rasterezpl.images`) and refuse without
@@ -226,6 +227,22 @@ def barcode(w, h, lines, font, px, align="center", fit=False, image=None, qr=Non
     return _text_into(out, (pad, top, w - 2 * pad, h - top - pad), lines, font, px, align, fit)
 
 
+def barcode_below(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+    """The lines on top, the Code 128 under them (the same shares as `barcode`, mirrored)."""
+    from .images import code128_image
+
+    data = _need_qr(qr, "barcode-below")
+    out, _ = _canvas(w, h)
+    pad = max(3, min(w, h) // 30)
+    text_h = int(px * 1.3 * len(lines)) + pad if lines and any(lines) else 0
+    bar_h = max(h // 3, h - 2 * pad - text_h)
+    top = h - pad - bar_h
+    _text_into(out, (pad, pad, w - 2 * pad, top - 2 * pad), lines, font, px, align, fit)
+    code = code128_image(data, bar_h, w - 2 * pad)
+    out.paste(code, ((w - code.width) // 2, top))
+    return out
+
+
 def barcode_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
     from .images import code128_image
 
@@ -284,6 +301,7 @@ LAYOUTS["badge"] = Layout("badge", "Jane Doe\nC3000071A605\nAcme Fibre", badge, 
 LAYOUTS["qr-left"] = Layout("qr-left", "Jane Doe\nC3000071A605", qr_left, needs_qr=True)
 LAYOUTS["qr"] = Layout("qr", "", qr_only, needs_qr=True)
 LAYOUTS["barcode"] = Layout("barcode", "DH35.201/A", barcode, needs_qr=True)
+LAYOUTS["barcode-below"] = Layout("barcode-below", "DH35.201/A", barcode_below, needs_qr=True)
 LAYOUTS["barcode-only"] = Layout("barcode-only", "", barcode_only, needs_qr=True)
 LAYOUTS["clear-qr"] = Layout(
     "clear-qr", "Jane Doe\nC3000071A605\nAcme Fibre", clear_qr, needs_qr=True, needs_full=True

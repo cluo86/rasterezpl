@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1 — 2026-10-05
+
+- Layout `barcode-below`: the lines on top, the Code 128 under them — the rack label as Oracle's data halls
+  carry it (the first floor read had the two the wrong way round).
+
 ## 0.9.0 — 2026-10-05
 
 - Code 128 barcodes, encoded here (ISO/IEC 15417: set B for printable ASCII, set C for runs of four or more
