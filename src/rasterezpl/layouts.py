@@ -20,9 +20,13 @@ no-clip / fit rules hold inside every layout. Each layout carries a SAMPLE text 
     badge     a QR code across the top (square, as large as fits), the lines centred below — check-in badges
     qr-left   the QR on the left, the lines beside it — narrow stock
     qr        the QR alone
+    barcode   a Code 128 barcode across the top (the widest module that fits), the lines centred below — the
+              rack / asset label whose barcode scans to the text printed under it
+    barcode-only  the Code 128 alone, as tall as the label
 
 The three picture layouts take an ``image`` (a Pillow 'L' image, see :mod:`rasterezpl.images`) and refuse without
-one; the QR layouts take ``qr`` (the text to encode) and refuse without it; the others ignore both.
+one; the QR and barcode layouts take ``qr`` (the text to encode — a QR or a Code 128, per the layout) and refuse
+without it; the others ignore both.
 """
 
 from __future__ import annotations
@@ -206,6 +210,32 @@ def qr_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=Non
     return out
 
 
+def barcode(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+    """Code 128 across the top, the lines below: the bars take what the text leaves (at least a third of the
+    height), at the widest whole-dot module that fits the width."""
+    from .images import code128_image
+
+    data = _need_qr(qr, "barcode")
+    out, _ = _canvas(w, h)
+    pad = max(3, min(w, h) // 30)
+    text_h = int(px * 1.3 * len(lines)) + pad if lines and any(lines) else 0
+    bar_h = max(h // 3, h - 2 * pad - text_h)
+    code = code128_image(data, bar_h, w - 2 * pad)
+    out.paste(code, ((w - code.width) // 2, pad))
+    top = pad + bar_h + pad
+    return _text_into(out, (pad, top, w - 2 * pad, h - top - pad), lines, font, px, align, fit)
+
+
+def barcode_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+    from .images import code128_image
+
+    out, _ = _canvas(w, h)
+    pad = max(3, min(w, h) // 30)
+    code = code128_image(_need_qr(qr, "barcode-only"), h - 2 * pad, w - 2 * pad)
+    out.paste(code, ((w - code.width) // 2, pad))
+    return out
+
+
 WHITE_FRAC = 0.75 / 2.25  # the print-on block of the S150X225VATY: the leading third of the label
 
 
@@ -253,6 +283,8 @@ LAYOUTS["image"] = Layout("image", "", image_only, needs_image=True)
 LAYOUTS["badge"] = Layout("badge", "Jane Doe\nC3000071A605\nAcme Fibre", badge, needs_qr=True)
 LAYOUTS["qr-left"] = Layout("qr-left", "Jane Doe\nC3000071A605", qr_left, needs_qr=True)
 LAYOUTS["qr"] = Layout("qr", "", qr_only, needs_qr=True)
+LAYOUTS["barcode"] = Layout("barcode", "DH35.201/A", barcode, needs_qr=True)
+LAYOUTS["barcode-only"] = Layout("barcode-only", "", barcode_only, needs_qr=True)
 LAYOUTS["clear-qr"] = Layout(
     "clear-qr", "Jane Doe\nC3000071A605\nAcme Fibre", clear_qr, needs_qr=True, needs_full=True
 )
@@ -274,7 +306,7 @@ def render_label(
     qr: str | None = None,
 ):
     """One label image of (w, h) dots in the named layout; `image` = a Pillow 'L' image for the picture layouts,
-    `qr` = the text the QR layouts encode."""
+    `qr` = the text the QR and barcode layouts encode."""
     try:
         lay = LAYOUTS[layout]
     except KeyError as e:

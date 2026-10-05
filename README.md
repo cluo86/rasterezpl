@@ -144,6 +144,11 @@ QR codes are built in (segno, pure Python): the `badge` layout puts a code acros
 a check-in badge from a CSV of names and ids is one compose, `qr` set to `{id}` — with `qr-left` for narrow
 stock and `qr` for the code alone.
 
+Code 128 barcodes are built in too (encoded here, no dependency): the `barcode` layout draws the bars across the
+top and the lines below — the rack or asset label whose barcode scans to exactly the text under it — and
+`barcode-only` the bars alone. They encode the same `qr` data (a template such as `{rack}`), at the widest
+whole-dot module that fits the label, and refuse a code that would print finer than two dots per module.
+
 
 The page composes jobs too: type labels (one per block, `{n}` = running number), paste rows with a header and a
 template like `{device} {port}\nRack {rack} U{u}`, or open an Easy-Mark `.pemx` project (its series data are the

@@ -194,7 +194,11 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
         )
     if not spec.pt or spec.pt <= 0:
         raise ValueError("pt must be a positive size")
-    texts = expand(spec.labels or ([""] if spec.layout in ("image", "qr") else []), spec.copies, spec.start)
+    texts = expand(
+        spec.labels or ([""] if spec.layout in ("image", "qr", "barcode-only") else []),
+        spec.copies,
+        spec.start,
+    )
     if not texts:
         raise ValueError("no label text")
     qrs = expand(spec.qrs or ([spec.qr] * len(spec.labels) if spec.qr else []), spec.copies, spec.start)

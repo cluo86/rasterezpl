@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 — 2026-10-05
+
+- Code 128 barcodes, encoded here (ISO/IEC 15417: set B for printable ASCII, set C for runs of four or more
+  digits, the checksum, 10-module quiet zones) — `images.code128_image` draws the bars at the widest whole-dot
+  module that fits the width and refuses under 2 dots per module. Layouts `barcode` (the bars across the top,
+  the lines below — a rack label whose code scans to the text printed under it) and `barcode-only`; they take
+  their data through the same `qr` field / template as the QR layouts. The templates sheet and the page show
+  them; the test suite round-trips every code through zxing-cpp (a dev dependency).
+
 ## 0.8.1 — 2026-10-01
 
 - The clear-laminate layouts take the full-label media themselves: composed on the standard media, the

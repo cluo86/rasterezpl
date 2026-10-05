@@ -188,7 +188,11 @@ class Handler(SimpleHTTPRequestHandler):
                         "needs_image": lay.needs_image,
                         "needs_qr": lay.needs_qr,
                         "needs_full": lay.needs_full,
-                        "qr_sample": "C3000071A605" if lay.needs_qr else None,
+                        "qr_sample": (
+                            ("DH35.201/A" if lay.name.startswith("barcode") else "C3000071A605")
+                            if lay.needs_qr
+                            else None
+                        ),
                     }
                     for lay in LAYOUTS.values()
                 ]
