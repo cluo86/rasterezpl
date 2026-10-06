@@ -125,7 +125,9 @@ def first_labels(data: bytes, n: int) -> bytes:
 def parse_selection(spec: str, total: int) -> list[int]:
     """A print-dialog range — "1", "1-2", "1,3,5-6" — to sorted 1-based indices within 1 … total."""
     picked: set[int] = set()
-    for part in spec.replace(" ", "").split(","):
+    # a range copied from a page or a chat often carries an en/em dash or 'to' instead of the hyphen — the same intent
+    norm = spec.replace("\u2013", "-").replace("\u2014", "-").replace("\u2010", "-").replace("to", "-")
+    for part in norm.replace(" ", "").split(","):
         if not part:
             continue
         lo, _, hi = part.partition("-")

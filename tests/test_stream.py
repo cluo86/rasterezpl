@@ -198,3 +198,13 @@ def test_tightest_fit_prefers_the_white_block_over_the_whole_label():
     _, _, fw, fh = full.area_px(0)
     whole = rz.job(full, [[Image.new("L", (fw, fh), 0), None]])
     assert rz.match_media(whole, rz.PRESETS)[0] == "panduit-s150x225vaty-2up-full"
+
+
+def test_parse_selection_accepts_dashes_and_to():
+    """A range pasted from a page ('326–390', en dash) or typed ('326 to 390') means the hyphen range (2026-10-06)."""
+    from rasterezpl.stream import parse_selection
+
+    assert parse_selection("326\u2013390", 1040) == list(range(326, 391))
+    assert parse_selection("326\u2014390", 1040) == list(range(326, 391))
+    assert parse_selection("326 to 390", 1040) == list(range(326, 391))
+    assert parse_selection("1,3,5-6", 10) == [1, 3, 5, 6]
