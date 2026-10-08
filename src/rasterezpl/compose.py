@@ -61,6 +61,7 @@ class Spec:
     qrs: list[str] = field(
         default_factory=list
     )  # the per-label QR data, parallel to `labels` (filled by from_dict)
+    stroke: int = 0  # extra dots of ink around every glyph: 1–2 = bolder, for a head that drops thin strokes
 
     @classmethod
     def from_dict(cls, d: dict) -> Spec:
@@ -94,6 +95,7 @@ class Spec:
             image_mode=str(d.get("image_mode") or "dither"),
             qr=qr_tpl,
             qrs=qrs,
+            stroke=max(0, int(d.get("stroke", 0) or 0)),
         )
 
 
@@ -230,6 +232,7 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
             spec.fit,
             image=picture,
             qr=qrs[i] if qrs else None,
+            stroke=spec.stroke,
         )
         if spec.rotate180:
             im = im.rotate(180)

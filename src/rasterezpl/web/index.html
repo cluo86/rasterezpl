@@ -27,6 +27,7 @@ pre{font-family:ui-monospace,Menlo,monospace;font-size:12px;margin:4px 0}
 <table><tr><td>
  media <select id="c_media"></select> font <select id="c_font"></select> pt <input type="text" id="c_pt" size="4" value="5.4">
  layout <select id="c_layout"></select> <button onclick="cSample()" title="fill the text with this layout's sample">sample</button>
+ weight <select id="c_stroke" title="extra dots of ink around every glyph — for a head that prints light"><option value="0">normal</option><option value="1">bold +1</option><option value="2">heavy +2</option></select>
  align <select id="c_align"><option>center</option><option>left</option></select>
  <label><input type="checkbox" id="c_fit"> fit</label> copies <input type="text" id="c_copies" size="2" value="1"> start <input type="text" id="c_start" size="3" value="1">
  name <input type="text" id="c_name" size="16" value="labels"><br>
@@ -123,7 +124,7 @@ async function loadLog() {
 // ---- compose -----------------------------------------------------------------------------------------------
 function cSpec() {
   const rows = $("c_rows").value.trim();
-  const d = {media: $("c_media").value, font: $("c_font").value, pt: parseFloat($("c_pt").value), align: $("c_align").value, fit: $("c_fit").checked, layout: $("c_layout").value,
+  const d = {media: $("c_media").value, font: $("c_font").value, pt: parseFloat($("c_pt").value), align: $("c_align").value, fit: $("c_fit").checked, layout: $("c_layout").value, stroke: parseInt($("c_stroke").value, 10),
              copies: parseInt($("c_copies").value || "1", 10), start: parseInt($("c_start").value || "1", 10), name: $("c_name").value};
   if (rows) { d.rows = rows; d.template = $("c_tpl").value; } else { d.text = $("c_text").value; }
   if (IMAGE) { d.image = IMAGE; d.image_mode = $("c_imgmode").value; }

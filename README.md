@@ -54,6 +54,16 @@ printers:
 rasterezpl print job.ezpl --printer tdp43me --labels 1-2 --status
 ```
 
+## Faded print
+
+Thermal transfer on polyester drops thin strokes when the head runs cool or fast. Two levers, independent:
+
+- **Heat, per printer, at send time.** Give the printer record a `darkness: 17` (^H, 0–19) and/or `speed: 2`
+  (^S, ips) in `printers.yaml`; every job sent through that record is retuned on the way out and the job files
+  stay as generated. `rasterezpl print --darkness 17 --speed 2` does it for one print.
+- **Thicker glyphs in the raster.** `stroke: 1` (or 2) on the composer, the *weight* select on the page, or
+  `rasterezpl text --stroke 1`, adds that many dots of ink around every glyph outline — any face, any size.
+
 ## Media
 
 A `Media` is one stock on one printer: dpi, `^Q` length and gap, `^W` width, optional speed / darkness / stop

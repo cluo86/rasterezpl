@@ -21,6 +21,8 @@ Location: ``--registry PATH``, else ``$RASTEREZPL_PRINTERS``, else ``~/.config/r
         media: panduit-s150x225vaty-2up      # a preset or a media above
         offset_in: [0.013, 0.03]    # from a ruler print; x ≥ 0 (^R), y ± (~Q)
         note: "ruler-read 2026-09-26"
+        darkness: 17                # optional: ^H 0–19 for THIS head, applied at send time (files unchanged)
+        speed: 2                    # optional: ^S ips, likewise
       g500:
         transport: "usb:G500"
         media: godex-92x34-flags
@@ -48,6 +50,8 @@ class Printer:
     media: Media
     offset_in: tuple[float, float] = (0.0, 0.0)
     note: str = ""
+    darkness: int | None = None  # ^H 0–19 applied at send time to every job (this head prints light / dark)
+    speed: int | None = None  # ^S ips applied at send time (slower = more heat per dot)
 
 
 @dataclass(frozen=True)
@@ -110,5 +114,7 @@ def load(explicit: str | None = None) -> Registry:
             media=media[mname],
             offset_in=(float(off[0]), float(off[1])),
             note=str(d.get("note", "")),
+            darkness=None if d.get("darkness") is None else int(d["darkness"]),
+            speed=None if d.get("speed") is None else int(d["speed"]),
         )
     return Registry(path, media, printers)

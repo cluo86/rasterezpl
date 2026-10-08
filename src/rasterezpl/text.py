@@ -71,16 +71,19 @@ def render_text(
     rotate180: bool = False,
     margin: int = 0,
     fit: bool = False,
+    stroke: int = 0,
 ):
     """Lines of text on a white image of ``size`` dots, ``px`` = font size in dots, lines centred vertically.
     A line wider than the image (minus margins) is an error, never clipped — unless ``fit``, which shrinks the font
-    until the longest line fits (and raises when even 6 dots per em does not)."""
+    until the longest line fits (and raises when even 6 dots per em does not). ``stroke`` = extra dots of ink
+    around every glyph outline (1 or 2 thickens any face for a head that drops thin strokes)."""
     from PIL import Image, ImageDraw, ImageFont
 
     w, h = size
+    stroke = max(0, int(stroke))
     while True:
         font = ImageFont.truetype(font_path, px)
-        widths = [font.getlength(t) for t in lines]
+        widths = [font.getlength(t) + 2 * stroke for t in lines]
         lp = round(px * line_spacing)
         if max(widths, default=0) <= w - 2 * margin and lp * len(lines) <= h - 2 * margin:
             break
@@ -95,7 +98,7 @@ def render_text(
     y = (h - lp * len(lines)) / 2
     for t, tw in zip(lines, widths, strict=True):
         x = margin if align == "left" else (w - tw) / 2
-        d.text((x, y), t, fill=0, font=font)
+        d.text((x + stroke, y), t, fill=0, font=font, stroke_width=stroke, stroke_fill=0)
         y += lp
     if rotate180:
         img = img.rotate(180)

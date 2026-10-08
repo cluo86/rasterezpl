@@ -31,6 +31,7 @@ from .stream import (
     matching_media,
     parse_blocks,
     parse_selection,
+    retune,
     select_labels,
     tightest,
 )
@@ -264,8 +265,15 @@ def run(
         data = select_labels(
             confine(root, r.file).read_bytes(), r.labels, reg.media[r.media or pr.media_name]
         )
+        heat = pr.darkness is not None or pr.speed is not None
+        if heat:
+            data = retune(data, pr.darkness, pr.speed)
         target = to or pr.transport
         note = send(data, target, pr.media, pr.offset_in)
+        if heat:
+            dk = pr.darkness if pr.darkness is not None else "file"
+            sp = pr.speed if pr.speed is not None else "file"
+            note += f" (darkness {dk}, speed {sp})"
         notes.append(f"{r.file} labels {r.labels} → {note}")
         if log is not None:
             entry = {

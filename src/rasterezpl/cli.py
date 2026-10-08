@@ -36,6 +36,7 @@ from .stream import (
     match_media,
     matching_media,
     parse_blocks,
+    retune,
     select_labels,
 )
 from .text import find_font
@@ -83,6 +84,7 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument(
         "--fit", action="store_true", help="shrink the font until the widest line fits (never clip)"
     )
+    q.add_argument("--stroke", type=int, default=0, help="extra dots of ink around every glyph (1–2: bolder)")
     q.add_argument("-o", "--out", required=True)
 
     q = sub.add_parser("image", help="bitmaps → a job file (each image fills one print area, in order)")
@@ -97,6 +99,12 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument("--first", type=int, help="only the first N label blocks")
     q.add_argument("--offset", help="override the printer's registration, x,y inches (x ≥ 0 → ^R, y → ~Q)")
     q.add_argument("--status", action="store_true", help="~S,CHECK first; refuse to send unless 00")
+    q.add_argument(
+        "--darkness", type=int, help="^H 0–19 for this print (default: the printer record's, else the file's)"
+    )
+    q.add_argument(
+        "--speed", type=int, help="^S ips for this print (default: the printer record's, else the file's)"
+    )
 
     q = sub.add_parser("ruler", help="print the calibration ruler (optionally over a job's first label)")
     q.add_argument("file", nargs="?")
@@ -254,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             align=args.align,
             fit=args.fit,
             area=args.area,
+            stroke=args.stroke,
         )
         try:
             data, m, _, texts = render(reg, spec)
@@ -305,6 +314,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.offset:
             ox, oy = (float(v) for v in args.offset.split(","))
             offset = (ox, oy)
+        dk = args.darkness if args.darkness is not None else (pr.darkness if pr else None)
+        sp = args.speed if args.speed is not None else (pr.speed if pr else None)
+        if dk is not None or sp is not None:
+            data = retune(data, dk, sp)
+            print(
+                f"heat for this print: darkness {dk if dk is not None else 'file'}, speed {sp if sp is not None else 'file'}"
+            )
         print(
             f"{args.file}: {total} blocks × {m.labels_per_block} labels for {m.name}; sending {count_labels(data)} blocks"
         )

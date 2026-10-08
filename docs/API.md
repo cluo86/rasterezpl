@@ -17,7 +17,8 @@ Paths in requests are relative to the served root and confined to it; only `.ezp
 - **Root** — the directory of job files (`.ezpl`, recursively). Anything else in it is served as a static file,
   so a page of your own can live beside the jobs and call this API on the same origin.
 - **Registry** — printers and media from `printers.yaml` (see the README). A printer has a transport, a media
-  and a registration offset. A job file matches a media by its header and geometry; it prints only on a printer
+  and a registration offset, and optionally a `darkness` (^H 0–19) and `speed` (^S ips) applied to every job at
+  send time — the file stays unchanged; a head that prints light gets more heat from its own record. A job file matches a media by its header and geometry; it prints only on a printer
   holding that media — or the same stock at the same dpi (a variant that only differs in where blocks may go,
   such as the whole label of a self-laminating stock instead of its white block).
 - **Plan** — a cart of `{file, labels, printer?}` entries resolved to rows: labels selected, count, the printer
@@ -113,6 +114,7 @@ A Spec, in one of three input forms:
 | `name` | the file stem (default `labels`) |
 | `align` | `center` (default) or `left` |
 | `fit` | shrink the font until the widest line fits (default false) |
+| `stroke` | extra dots of ink around every glyph: 0 (default), 1 or 2 — bolder, for a head that drops thin strokes |
 | `copies` | copies of each label (default 1) |
 | `start` | the first `{n}` (default 1) |
 | `rotate180` | turn the print on the label (default false) |

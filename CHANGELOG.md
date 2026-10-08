@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0 — 2026-10-08
+
+- Faded print, two levers: a printer record's optional `darkness` / `speed` are applied to every job at send
+  time (`retune`, the file unchanged; `print --darkness/--speed` for one print); `stroke` thickens every glyph
+  by that many dots (`render_text`, the composer, the page's *weight*, `text --stroke`).
+
 ## 0.9.1 — 2026-10-05
 
 - Layout `barcode-below`: the lines on top, the Code 128 under them — the rack label as Oracle's data halls

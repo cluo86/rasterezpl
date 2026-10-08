@@ -113,6 +113,26 @@ def serialise_block(setup: bytes, qs: Iterable[QBlock]) -> bytes:
     return bytes(out)
 
 
+def retune(data: bytes, darkness: int | None = None, speed: int | None = None) -> bytes:
+    """A job with its setup's ``^H`` (darkness 0–19) and/or ``^S`` (speed, ips) replaced — a per-printer choice
+    applied at send time, never written into the job file (a head that prints light wants more heat and less
+    speed; the file stays the family's record). Only the setup before the first ``^L`` is touched."""
+    import re
+
+    head, sep, rest = data.partition(b"^L\r")
+    if not sep:
+        return data
+    if darkness is not None:
+        if not 0 <= int(darkness) <= 19:
+            raise ValueError(f"darkness {darkness}: 0–19")
+        head = re.sub(rb"\^H\d+\r", f"^H{int(darkness):02d}\r".encode(), head, count=1)
+    if speed is not None:
+        if not 1 <= int(speed) <= 7:
+            raise ValueError(f"speed {speed}: 1–7 ips")
+        head = re.sub(rb"\^S\d\r", f"^S{int(speed)}\r".encode(), head, count=1)
+    return head + sep + rest
+
+
 def count_labels(data: bytes) -> int:
     return len(parse_blocks(data))
 

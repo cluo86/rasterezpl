@@ -55,25 +55,25 @@ def _canvas(w: int, h: int):
     return img, ImageDraw.Draw(img)
 
 
-def _text_into(img, box: tuple[int, int, int, int], lines, font, px, align, fit, invert=False):
+def _text_into(img, box: tuple[int, int, int, int], lines, font, px, align, fit, invert=False, stroke=0):
     """Render the lines into box=(x, y, w, h) of img; `invert` = white text on the black box."""
     from PIL import ImageOps
 
     x, y, bw, bh = box
     if bw <= 0 or bh <= 0 or not lines:
         return img
-    t = render_text((bw, bh), lines, font, px, align=align, fit=fit)
+    t = render_text((bw, bh), lines, font, px, align=align, fit=fit, stroke=stroke)
     if invert:
         t = ImageOps.invert(t)
     img.paste(t, (x, y))
     return img
 
 
-def plain(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
-    return render_text((w, h), lines, font, px, align=align, fit=fit)
+def plain(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
+    return render_text((w, h), lines, font, px, align=align, fit=fit, stroke=stroke)
 
 
-def framed(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def framed(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     img, d = _canvas(w, h)
     m = max(2, min(w, h) // 30)
     r = max(4, min(w, h) // 12)
@@ -81,21 +81,23 @@ def framed(w, h, lines, font, px, align="center", fit=False, image=None, qr=None
     m2 = m * 3
     d.rounded_rectangle((m2, m2, w - 1 - m2, h - 1 - m2), radius=max(2, r - m2 // 2), outline=0, width=1)
     pad = m2 + max(2, m)
-    return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
+    return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit, stroke=stroke)
 
 
-def banner(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def banner(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     img, d = _canvas(w, h)
     band = int(px * 1.6) + 4
     band = min(band, h // 2)
     d.rectangle((0, 0, w - 1, band - 1), fill=0)
     head, rest = lines[:1], lines[1:]
-    _text_into(img, (2, 1, w - 4, band - 2), head, font, px, align, True, invert=True)
+    _text_into(img, (2, 1, w - 4, band - 2), head, font, px, align, True, invert=True, stroke=stroke)
     pad = max(2, band // 6)
-    return _text_into(img, (pad, band + pad, w - 2 * pad, h - band - 2 * pad), rest, font, px, align, fit)
+    return _text_into(
+        img, (pad, band + pad, w - 2 * pad, h - band - 2 * pad), rest, font, px, align, fit, stroke=stroke
+    )
 
 
-def sidebar(w, h, lines, font, px, align="left", fit=False, image=None, qr=None):
+def sidebar(w, h, lines, font, px, align="left", fit=False, image=None, qr=None, stroke=0):
     img, d = _canvas(w, h)
     bar = max(6, w // 14)
     period = max(4, bar // 2)
@@ -103,10 +105,12 @@ def sidebar(w, h, lines, font, px, align="left", fit=False, image=None, qr=None)
         d.line((0, y, bar, y + bar), fill=0, width=max(1, period // 3))
     d.rectangle((0, 0, bar, h - 1), outline=0, width=1)
     pad = max(2, bar // 3)
-    return _text_into(img, (bar + pad * 2, pad, w - bar - pad * 3, h - 2 * pad), lines, font, px, align, fit)
+    return _text_into(
+        img, (bar + pad * 2, pad, w - bar - pad * 3, h - 2 * pad), lines, font, px, align, fit, stroke=stroke
+    )
 
 
-def corners(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def corners(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     img, d = _canvas(w, h)
     L = max(6, min(w, h) // 6)
     t = max(1, min(w, h) // 60)
@@ -114,15 +118,15 @@ def corners(w, h, lines, font, px, align="center", fit=False, image=None, qr=Non
         d.line((x0, y0, x0 + dx * L, y0), fill=0, width=t)
         d.line((x0, y0, x0, y0 + dy * L), fill=0, width=t)
     pad = max(3, t * 2 + 2)
-    return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
+    return _text_into(img, (pad, pad, w - 2 * pad, h - 2 * pad), lines, font, px, align, fit, stroke=stroke)
 
 
-def ticket(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def ticket(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     img, d = _canvas(w, h)
     head, rest = lines[:1], lines[1:]
     top = int(px * 1.5) + 4 if rest else h
     top = min(top, h // 2) if rest else h
-    _text_into(img, (2, 1, w - 4, top - 2), head, font, px, align, True)
+    _text_into(img, (2, 1, w - 4, top - 2), head, font, px, align, True, stroke=stroke)
     if rest:
         dash = max(3, w // 60)
         for x in range(2, w - 2, dash * 2):
@@ -131,7 +135,9 @@ def ticket(w, h, lines, font, px, align="center", fit=False, image=None, qr=None
         d.ellipse((0, top - 3, 6, top + 3), outline=0)
         d.ellipse((w - 7, top - 3, w - 1, top + 3), outline=0)
         pad = 3
-        _text_into(img, (pad, top + pad, w - 2 * pad, h - top - 2 * pad), rest, font, px, align, fit)
+        _text_into(
+            img, (pad, top + pad, w - 2 * pad, h - top - 2 * pad), rest, font, px, align, fit, stroke=stroke
+        )
     return img
 
 
@@ -141,7 +147,7 @@ def _need(image, name):
     return image
 
 
-def logo(w, h, lines, font, px, align="left", fit=False, image=None, qr=None):
+def logo(w, h, lines, font, px, align="left", fit=False, image=None, qr=None, stroke=0):
     from .images import to_bitmap
 
     img = _need(image, "logo")
@@ -149,10 +155,12 @@ def logo(w, h, lines, font, px, align="left", fit=False, image=None, qr=None):
     pad = max(3, min(w, h) // 30)
     lw = int(w * 0.4)
     out.paste(to_bitmap(img, lw - 2 * pad, h - 2 * pad), (pad, pad))
-    return _text_into(out, (lw + pad, pad, w - lw - 2 * pad, h - 2 * pad), lines, font, px, align, fit)
+    return _text_into(
+        out, (lw + pad, pad, w - lw - 2 * pad, h - 2 * pad), lines, font, px, align, fit, stroke=stroke
+    )
 
 
-def logo_top(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def logo_top(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     from .images import to_bitmap
 
     img = _need(image, "logo-top")
@@ -160,10 +168,12 @@ def logo_top(w, h, lines, font, px, align="center", fit=False, image=None, qr=No
     pad = max(3, min(w, h) // 30)
     lh = int(h * 0.45)
     out.paste(to_bitmap(img, w - 2 * pad, lh - pad), (pad, pad))
-    return _text_into(out, (pad, lh + pad, w - 2 * pad, h - lh - 2 * pad), lines, font, px, align, fit)
+    return _text_into(
+        out, (pad, lh + pad, w - 2 * pad, h - lh - 2 * pad), lines, font, px, align, fit, stroke=stroke
+    )
 
 
-def image_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def image_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     from .images import to_bitmap
 
     return to_bitmap(_need(image, "image"), w, h)
@@ -175,7 +185,7 @@ def _need_qr(qr, name):
     return qr
 
 
-def badge(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def badge(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     from .images import qr_image
 
     data = _need_qr(qr, "badge")
@@ -186,10 +196,10 @@ def badge(w, h, lines, font, px, align="center", fit=False, image=None, qr=None)
     code = qr_image(data, box)
     out.paste(code, ((w - code.width) // 2, pad + (box - code.height) // 2))
     top = pad + box + pad
-    return _text_into(out, (pad, top, w - 2 * pad, h - top - pad), lines, font, px, align, fit)
+    return _text_into(out, (pad, top, w - 2 * pad, h - top - pad), lines, font, px, align, fit, stroke=stroke)
 
 
-def qr_left(w, h, lines, font, px, align="left", fit=False, image=None, qr=None):
+def qr_left(w, h, lines, font, px, align="left", fit=False, image=None, qr=None, stroke=0):
     from .images import qr_image
 
     data = _need_qr(qr, "qr-left")
@@ -199,10 +209,12 @@ def qr_left(w, h, lines, font, px, align="left", fit=False, image=None, qr=None)
     code = qr_image(data, box)
     out.paste(code, (pad, pad + (box - code.height) // 2))
     left = pad + box + pad * 2
-    return _text_into(out, (left, pad, w - left - pad, h - 2 * pad), lines, font, px, align, fit)
+    return _text_into(
+        out, (left, pad, w - left - pad, h - 2 * pad), lines, font, px, align, fit, stroke=stroke
+    )
 
 
-def qr_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def qr_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     from .images import qr_image
 
     out, _ = _canvas(w, h)
@@ -211,7 +223,7 @@ def qr_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=Non
     return out
 
 
-def barcode(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def barcode(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     """Code 128 across the top, the lines below: the bars take what the text leaves (at least a third of the
     height), at the widest whole-dot module that fits the width."""
     from .images import code128_image
@@ -224,10 +236,10 @@ def barcode(w, h, lines, font, px, align="center", fit=False, image=None, qr=Non
     code = code128_image(data, bar_h, w - 2 * pad)
     out.paste(code, ((w - code.width) // 2, pad))
     top = pad + bar_h + pad
-    return _text_into(out, (pad, top, w - 2 * pad, h - top - pad), lines, font, px, align, fit)
+    return _text_into(out, (pad, top, w - 2 * pad, h - top - pad), lines, font, px, align, fit, stroke=stroke)
 
 
-def barcode_below(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def barcode_below(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     """The lines on top, the Code 128 under them (the same shares as `barcode`, mirrored)."""
     from .images import code128_image
 
@@ -237,13 +249,13 @@ def barcode_below(w, h, lines, font, px, align="center", fit=False, image=None, 
     text_h = int(px * 1.3 * len(lines)) + pad if lines and any(lines) else 0
     bar_h = max(h // 3, h - 2 * pad - text_h)
     top = h - pad - bar_h
-    _text_into(out, (pad, pad, w - 2 * pad, top - 2 * pad), lines, font, px, align, fit)
+    _text_into(out, (pad, pad, w - 2 * pad, top - 2 * pad), lines, font, px, align, fit, stroke=stroke)
     code = code128_image(data, bar_h, w - 2 * pad)
     out.paste(code, ((w - code.width) // 2, top))
     return out
 
 
-def barcode_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def barcode_only(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     from .images import code128_image
 
     out, _ = _canvas(w, h)
@@ -256,32 +268,32 @@ def barcode_only(w, h, lines, font, px, align="center", fit=False, image=None, q
 WHITE_FRAC = 0.75 / 2.25  # the print-on block of the S150X225VATY: the leading third of the label
 
 
-def _clear(w, h, lines, font, px, align, fit, picture):
+def _clear(w, h, lines, font, px, align, fit, picture, stroke=0):
     """Text on the white third, `picture` (a one-bit image already fitted) centred on the clear two thirds."""
     out, _ = _canvas(w, h)
     white_h = int(h * WHITE_FRAC)
     pad = max(3, min(w, h) // 40)
-    _text_into(out, (pad, pad, w - 2 * pad, white_h - 2 * pad), lines, font, px, align, fit)
+    _text_into(out, (pad, pad, w - 2 * pad, white_h - 2 * pad), lines, font, px, align, fit, stroke=stroke)
     out.paste(picture, ((w - picture.width) // 2, white_h + (h - white_h - picture.height) // 2))
     return out
 
 
-def clear_qr(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def clear_qr(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     from .images import qr_image
 
     white_h = int(h * WHITE_FRAC)
     pad = max(3, min(w, h) // 40)
     box = min(w, h - white_h) - 2 * pad
-    return _clear(w, h, lines, font, px, align, fit, qr_image(_need_qr(qr, "clear-qr"), box))
+    return _clear(w, h, lines, font, px, align, fit, qr_image(_need_qr(qr, "clear-qr"), box), stroke)
 
 
-def clear_image(w, h, lines, font, px, align="center", fit=False, image=None, qr=None):
+def clear_image(w, h, lines, font, px, align="center", fit=False, image=None, qr=None, stroke=0):
     from .images import to_bitmap
 
     white_h = int(h * WHITE_FRAC)
     pad = max(3, min(w, h) // 40)
     pic = to_bitmap(_need(image, "clear-image"), w - 2 * pad, h - white_h - 2 * pad)
-    return _clear(w, h, lines, font, px, align, fit, pic)
+    return _clear(w, h, lines, font, px, align, fit, pic, stroke)
 
 
 LAYOUTS: dict[str, Layout] = {
@@ -322,11 +334,12 @@ def render_label(
     fit: bool = False,
     image=None,
     qr: str | None = None,
+    stroke: int = 0,
 ):
     """One label image of (w, h) dots in the named layout; `image` = a Pillow 'L' image for the picture layouts,
-    `qr` = the text the QR and barcode layouts encode."""
+    `qr` = the text the QR and barcode layouts encode, `stroke` = extra dots of ink around every glyph (bolder)."""
     try:
         lay = LAYOUTS[layout]
     except KeyError as e:
         raise ValueError(f"unknown layout {layout!r}; one of {', '.join(LAYOUTS)}") from e
-    return lay.draw(w, h, lines, font, px, align, fit, image=image, qr=qr)
+    return lay.draw(w, h, lines, font, px, align, fit, image=image, qr=qr, stroke=stroke)
