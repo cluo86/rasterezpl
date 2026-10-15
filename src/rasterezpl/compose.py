@@ -29,7 +29,7 @@ import json
 import re
 import time
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from .layouts import render_label
@@ -161,7 +161,8 @@ def template_fields(template: str) -> list[str]:
 
 def parse_rows(rows: str, template: str, header: bool = True) -> list[str]:
     """Rows (see ``read_rows``) → one label per row from `template`, whose {column} fields are filled from that
-    row (``\\n`` in the template = a new line, ``{n}`` = the row number); no template = every column a line."""
+    row (``\\n`` in the template = a new line, ``{n}`` = the row number unless a column is named n); no template =
+    every column a line."""
     cols, body = read_rows(rows, header)
     if not cols:
         return []
@@ -174,7 +175,9 @@ def parse_rows(rows: str, template: str, header: bool = True) -> list[str]:
         )
     out = []
     for i, vals in enumerate(body, 1):
-        out.append(tpl.format(**vals, n=i) if fields else "\n".join(vals.values()))
+        out.append(
+            tpl.format(**{"n": i, **vals}) if fields else "\n".join(vals.values())
+        )  # a column n beats the counter
     return out
 
 
@@ -220,8 +223,9 @@ def _slug(name: str) -> str:
     return s or "labels"
 
 
-def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, Media, str, list[str]]:
-    """The job bytes for a spec (validated: media on record, face present, at least one label)."""
+def resolve_media(reg: Registry, spec: Spec) -> Media:
+    """The media the spec prints on — the one named, or for a whole-label layout the full-label variant of the
+    same stock (the spec's `media` is rewritten to it, so the sidecar says what was printed)."""
     if spec.media not in reg.media:
         raise ValueError(f"unknown media {spec.media!r}")
     m = reg.media[spec.media]
@@ -244,6 +248,12 @@ def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, 
                 f"area is the die-cut), and the registry has none for the stock of {spec.media!r}"
             )
         spec.media, m = full, reg.media[full]
+    return m
+
+
+def render(reg: Registry, spec: Spec, root: Path | None = None) -> tuple[bytes, Media, str, list[str]]:
+    """The job bytes for a spec (validated: media on record, face present, at least one label)."""
+    m = resolve_media(reg, spec)
     font = find_font(spec.font) if spec.font else None
     if font is None and root is not None and spec.font:
         cand = root / FONTS_DIR / spec.font
@@ -336,14 +346,28 @@ def compose(root: Path, reg: Registry, spec: Spec) -> dict:
 
 
 def preview_png(reg: Registry, spec: Spec, root: Path | None = None, block: int = 1) -> bytes:
-    """The proof of one web row of the spec, rendered in memory (nothing saved)."""
+    """The proof of one web row of the spec, rendered in memory (nothing saved). Only the labels of that row
+    are rastered — a live preview of a 500-row list costs one row, not 500."""
     from .proof import proof_image
 
-    data, m, _, texts = render(reg, spec, root)
+    m = resolve_media(reg, spec)
+    total = 1
+    if spec.labels:
+        per = 1 if spec.area is not None else m.labels_per_block
+        texts = expand(spec.labels, spec.copies, spec.start)
+        qrs = expand(spec.qrs or ([spec.qr] * len(spec.labels) if spec.qr else []), spec.copies, spec.start)
+        if qrs and len(qrs) != len(texts):
+            raise ValueError(f"{len(qrs)} QR data for {len(texts)} labels")
+        total = -(-len(texts) // per)
+        bn = min(max(1, block), total)
+        lo, hi = (bn - 1) * per, bn * per
+        spec = replace(spec, labels=texts[lo:hi], qrs=qrs[lo:hi], qr=None, copies=1)
+        block = 1
+    data, m, _, _ = render(reg, spec, root)
     blocks = parse_blocks(data)
     bn = min(max(1, block), len(blocks))
     img = proof_image(
-        m, decode_block(blocks[bn - 1][1], m), caption=f"{spec.name} — row {bn} of {len(blocks)} ({m.name})"
+        m, decode_block(blocks[bn - 1][1], m), caption=f"{spec.name} — row {bn} of {total} ({m.name})"
     )
     buf = io.BytesIO()
     img.save(buf, format="PNG")

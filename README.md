@@ -166,7 +166,8 @@ saying which columns go where (the columns appear as buttons; no template = ever
 file without a header line is `col1`, `col2`, …; the delimiter is sniffed, a BOM and blank rows are tolerated,
 and the count and the first label are shown before anything is composed) — or open an Easy-Mark `.pemx`
 project (its series data are the texts). Pick the media and a face the server machine has, preview the exact
-print, compose → the job lands under `<root>/composed/` with a `.json` sidecar (the spec, with the list and the
+print — it follows every change you make, and a *row* field picks which web row it shows —
+compose → the job lands under `<root>/composed/` with a `.json` sidecar (the spec, with the list and the
 template) and in the cart. No silent font substitution: a face that is not on the machine is a refusal.
 
 A composed job is a **recipe**: *recent compositions* lists them (media, face, size, layout, weight, template,

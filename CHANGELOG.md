@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.1 — 2026-10-15
+
+- The preview follows the form: every change to the composer re-renders the shown row after a short pause
+  (debounced, an older render in flight never lands on the page); a *row* field picks which web row to show.
+  `preview_png` rasters only that row's labels, not the whole list — a live preview of a 500-row list costs one
+  row.
+- A column named `n` is data: the template's `{n}` is the row counter only when no column has that name.
+
+## 0.11.0 — 2026-10-15
+
+- The list of labels: a `.csv` / `.tsv` file or a pasted sheet is the page's first-class input — delimiter
+  sniffed among tab / comma / semicolon, BOM, CRLF and blank rows tolerated, `header: false` for a plain list
+  (`col1`, `col2`, …); the columns appear as buttons that write `{column}` into the template, and the count and
+  the first label are shown before anything is composed (`POST /api/rows`).
+- A composed job is a recipe: the sidecar keeps `rows` / `template` / `header`, `GET /api/composed` lists the
+  jobs newest first, and the page's *recent compositions* reloads one into the form.
+- CLI: `text --rows FILE [--template T] [--no-header] [--layout L] [--qr Q]`.
+
 ## 0.10.0 — 2026-10-08
 
 - Faded print, two levers: a printer record's optional `darkness` / `speed` are applied to every job at send

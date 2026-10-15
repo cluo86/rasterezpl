@@ -18,6 +18,7 @@ from rasterezpl.compose import (
     read_rows,
     sniff_delimiter,
 )
+from rasterezpl.registry import load
 from rasterezpl.server import make_server
 from test_compose import REG, _get, _post  # rootdir conftest-less: tests are importable as modules
 
@@ -162,3 +163,45 @@ def test_cli_text_rows(tmp_path, capsys):
         main([*base, "a", "--rows", str(csv_file), "-o", str(job)])
     with pytest.raises(SystemExit):
         main([*base, "--rows", str(tmp_path / "missing.csv"), "-o", str(job)])
+
+
+def test_preview_renders_only_the_shown_row(site, monkeypatch):
+    """The live preview of a long list must not raster the whole list: one row's labels, the caption says of N."""
+    import sys
+
+    from rasterezpl.compose import preview_png
+
+    cmod = sys.modules["rasterezpl.compose"]  # the package re-exports compose() under the module's name
+
+    b = site["base"]
+    fonts = json.loads(_get(f"{b}/api/fonts")[2])
+    if not fonts:
+        pytest.skip("no font on this machine")
+    reg = load(str(site["root"].parent / "printers.yaml"))
+    seen: list[list[str]] = []
+    real = cmod.render
+
+    def spy(reg_, spec, root=None):
+        seen.append(list(spec.labels))
+        return real(reg_, spec, root)
+
+    monkeypatch.setattr(cmod, "render", spy)
+    labels = [str(i) for i in range(1, 8)]  # 7 labels, 2 copies each = 14 texts = 7 rows on the two-up media
+    spec = Spec(media="tiny", font=fonts[0]["name"], pt=3, labels=labels, copies=2, fit=True, qr="{n}")
+    png = preview_png(reg, spec, site["root"], block=1)
+    assert png.startswith(b"\x89PNG") and seen[-1] == ["1", "1"]
+    preview_png(reg, spec, site["root"], block=4)
+    assert seen[-1] == ["4", "4"]
+    preview_png(reg, spec, site["root"], block=99)  # past the end: the last row
+    assert seen[-1] == ["7", "7"]
+    # {n} is already the running number in the rastered row, and a single area keeps one label per row
+    three = Spec(media="tiny", font=fonts[0]["name"], pt=3, labels=["#{n}", "b", "c"], start=5, fit=True)
+    preview_png(reg, three, site["root"], block=1)
+    assert seen[-1] == ["#5", "b"]
+    preview_png(reg, three, site["root"], block=2)
+    assert seen[-1] == ["c"]
+    one_area = Spec(media="tiny", font=fonts[0]["name"], pt=3, labels=["a", "b", "c"], area=1, fit=True)
+    preview_png(reg, one_area, site["root"], block=3)
+    assert seen[-1] == ["c"]
+    # the spec given is not changed by the slicing
+    assert spec.labels == labels and spec.copies == 2 and spec.qr == "{n}"

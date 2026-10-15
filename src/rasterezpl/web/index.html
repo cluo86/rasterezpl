@@ -23,8 +23,8 @@ pre{font-family:ui-monospace,Menlo,monospace;font-size:12px;margin:4px 0}
 <div id="cart"></div>
 
 <h2>Compose — your own labels</h2>
-<div class="muted">Type labels (one per block, blank line between; <code>{n}</code> = running number), or give a <em>list of labels</em> — open a CSV / TSV file or paste a sheet, one label per row, a template saying which columns go where (no template: every column on its own line) — or open an Easy-Mark <code>.pemx</code>. A composed job is a recipe: <em>recent compositions</em> below reloads one, swap the list, print. Pick a layout (a decoration around the text; <em>sample</em> fills its example) and a face — the bundled faces render the same everywhere. A picture (PNG, JPEG, or SVG when the server can render it) goes on the <em>logo</em>, <em>logo-top</em> and <em>image</em> layouts; the <em>badge</em>, <em>qr-left</em> and <em>qr</em> layouts encode the QR data, one code per label (<em>barcode</em> / <em>barcode-below</em> / <em>barcode-only</em> encode the same data as a Code 128 — a rack label whose bars scan to the text under them); <em>clear-qr</em> and <em>clear-image</em> print on the WHOLE self-laminating label (the full-label media is picked for you) — for a tag stuck flat, not one that wraps. Preview is the exact print; compose saves a job file under <code>composed/</code> and puts it in the cart.</div>
-<table><tr><td>
+<div class="muted">Type labels (one per block, blank line between; <code>{n}</code> = running number), or give a <em>list of labels</em> — open a CSV / TSV file or paste a sheet, one label per row, a template saying which columns go where (no template: every column on its own line) — or open an Easy-Mark <code>.pemx</code>. A composed job is a recipe: <em>recent compositions</em> below reloads one, swap the list, print. Pick a layout (a decoration around the text; <em>sample</em> fills its example) and a face — the bundled faces render the same everywhere. A picture (PNG, JPEG, or SVG when the server can render it) goes on the <em>logo</em>, <em>logo-top</em> and <em>image</em> layouts; the <em>badge</em>, <em>qr-left</em> and <em>qr</em> layouts encode the QR data, one code per label (<em>barcode</em> / <em>barcode-below</em> / <em>barcode-only</em> encode the same data as a Code 128 — a rack label whose bars scan to the text under them); <em>clear-qr</em> and <em>clear-image</em> print on the WHOLE self-laminating label (the full-label media is picked for you) — for a tag stuck flat, not one that wraps. The preview is the exact print of the first row and follows every change you make (<em>preview</em> re-renders it now; <em>row</em> picks another); compose saves a job file under <code>composed/</code> and puts it in the cart.</div>
+<table id="compose"><tr><td>
  media <select id="c_media"></select> font <select id="c_font"></select> pt <input type="text" id="c_pt" size="4" value="5.4">
  layout <select id="c_layout"></select> <button onclick="cSample()" title="fill the text with this layout's sample">sample</button>
  weight <select id="c_stroke" title="extra dots of ink around every glyph — for a head that prints light"><option value="0">normal</option><option value="1">bold +1</option><option value="2">heavy +2</option></select>
@@ -39,8 +39,8 @@ pre{font-family:ui-monospace,Menlo,monospace;font-size:12px;margin:4px 0}
  <div>QR / barcode data for the <em>badge</em> / <em>qr-left</em> / <em>qr</em> / <em>barcode</em> layouts: <input type="text" id="c_qr" size="32" placeholder="{n} · or {column} with rows · or a fixed text"> <span class="muted">one code per label</span></div>
  <div>picture for the <em>logo</em> / <em>logo-top</em> / <em>image</em> layouts: <input type="file" id="c_image" accept=".png,.jpg,.jpeg,.svg"> <select id="c_imgmode"><option>dither</option><option>threshold</option></select> <span id="c_imgnote" class="muted"></span></div>
  <div>Easy-Mark project: <input type="file" id="c_pemx" accept=".pemx,.zip"> <span id="c_pemxnote" class="muted"></span></div>
- <button onclick="cPreview()">preview</button> <button class="big" onclick="cCompose()">compose → cart</button> <span id="c_note"></span>
-</td><td><img id="c_img" class="proof" alt=""></td></tr></table>
+ <button onclick="cPreview()">preview</button> row <input type="text" id="c_block" size="2" value="1" title="which web row the preview shows"> <button class="big" onclick="cCompose()">compose → cart</button> <span id="c_note"></span>
+</td><td><img id="c_img" class="proof" alt=""><div id="c_imgstate" class="muted"></div></td></tr></table>
 <h3>Recent compositions</h3>
 <div class="muted">a composed job's recipe — media, face, size, layout, weight, template — and its list; <em>reload</em> puts it back in the form (a picture is not kept: pick it again)</div>
 <div id="composed" class="muted"></div>
@@ -134,14 +134,33 @@ function cSpec() {
   if ($("c_qr").value.trim()) d.qr = $("c_qr").value.trim();
   return d;
 }
+// the preview follows the form: every change re-renders the shown row after a short pause; an older render
+// still in flight is abandoned, so the picture is always the latest state (or the error that state gives)
+let PREVIEW_ABORT = null, PREVIEW_TIMER = null, PREVIEW_URL = null, PREVIEW_GEN = 0;
+function cLive() { clearTimeout(PREVIEW_TIMER); PREVIEW_TIMER = setTimeout(cPreview, 350); }
+function cHasInput() { return !!($("c_text").value.trim() || $("c_rows").value.trim() || $("c_qr").value.trim() || IMAGE); }
 async function cPreview() {
-  $("c_note").textContent = "";
+  clearTimeout(PREVIEW_TIMER);
+  if (PREVIEW_ABORT) PREVIEW_ABORT.abort();
+  if (!cHasInput()) { $("c_img").removeAttribute("src"); $("c_imgstate").textContent = ""; return; }
+  const ctl = PREVIEW_ABORT = new AbortController(), gen = ++PREVIEW_GEN;  // only the newest render may touch the page
+  $("c_imgstate").textContent = "rendering…";
   try {
-    const r = await fetch("/api/compose", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...cSpec(), preview: true})});
+    const block = parseInt($("c_block").value || "1", 10) || 1;
+    const r = await fetch("/api/compose", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...cSpec(), preview: true, block}), signal: ctl.signal});
     if (!r.ok) { const j = await r.json(); throw new Error(j.error); }
-    $("c_img").src = URL.createObjectURL(await r.blob());
-  } catch (e) { $("c_note").textContent = e.message; $("c_note").className = "bad"; }
+    const blob = await r.blob();
+    if (gen !== PREVIEW_GEN) return;
+    if (PREVIEW_URL) URL.revokeObjectURL(PREVIEW_URL);
+    PREVIEW_URL = URL.createObjectURL(blob); $("c_img").src = PREVIEW_URL;
+    $("c_imgstate").textContent = ""; if ($("c_note").className === "bad") { $("c_note").textContent = ""; $("c_note").className = ""; }
+  } catch (e) {
+    if (gen !== PREVIEW_GEN || e.name === "AbortError") return;
+    $("c_imgstate").textContent = ""; $("c_note").textContent = e.message; $("c_note").className = "bad";
+  }
 }
+$("compose").addEventListener("input", ev => { if (ev.target.type !== "file") cLive(); });
+$("compose").addEventListener("change", ev => { if (ev.target.type !== "file") cLive(); });
 async function cCompose() {
   $("c_note").textContent = ""; $("c_note").className = "";
   try {
@@ -174,7 +193,7 @@ function cRowsClear() { $("c_rows").value = ""; $("c_csv").value = ""; $("c_tpl"
 $("c_csv").onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;
   $("c_rows").value = await f.text(); $("c_name").value = f.name.replace(/\.(csv|tsv|txt)$/i, "");
-  cRowsProbe();
+  cRowsProbe(); cLive();
 };
 $("c_rows").oninput = cRowsChanged; $("c_tpl").oninput = cRowsChanged; $("c_header").onchange = cRowsProbe;
 // recent compositions: the recipe list
@@ -205,7 +224,7 @@ async function cReload(specPath) {
   } catch (e) { $("c_note").textContent = e.message; $("c_note").className = "bad"; }
 }
 let LAYOUTS = [];
-function cSample() { const l = LAYOUTS.find(x => x.name === $("c_layout").value); if (l) { $("c_text").value = l.sample; $("c_rows").value = ""; $("c_csv").value = ""; cRowsProbe(); if (l.qr_sample) $("c_qr").value = l.qr_sample; } }
+function cSample() { const l = LAYOUTS.find(x => x.name === $("c_layout").value); if (l) { $("c_text").value = l.sample; $("c_rows").value = ""; $("c_csv").value = ""; cRowsProbe(); if (l.qr_sample) $("c_qr").value = l.qr_sample; cLive(); } }
 function cLayoutChanged() {
   const l = LAYOUTS.find(x => x.name === $("c_layout").value); if (!l) return;
   const opts = [...$("c_media").options];
@@ -233,6 +252,7 @@ $("c_image").onchange = async ev => {
   const bytes = new Uint8Array(await f.arrayBuffer()); let s = ""; for (const b of bytes) s += String.fromCharCode(b);
   IMAGE = btoa(s); $("c_imgnote").textContent = `${f.name} (${Math.round(f.size / 1024)} KB) — pick a picture layout`;
   if (!["logo", "logo-top", "image", "clear-image"].includes($("c_layout").value)) { $("c_layout").value = "logo"; cLayoutChanged(); cSample(); }
+  cLive();
 };
 $("c_pemx").onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;
@@ -240,7 +260,8 @@ $("c_pemx").onchange = async ev => {
   try {
     const j = await api("/api/import", {pemx: btoa(s)});
     $("c_text").value = j.texts.join("\n\n"); if (j.pt) $("c_pt").value = j.pt; $("c_name").value = f.name.replace(/\.pemx$/i, "");
-    $("c_pemxnote").textContent = `${j.labels} labels from the project${j.part ? " (stock " + j.part + ")" : ""} — pick the media, preview, compose`;
+    $("c_pemxnote").textContent = `${j.labels} labels from the project${j.part ? " (stock " + j.part + ")" : ""} — pick the media, compose`;
+    cLive();
   } catch (e) { $("c_pemxnote").textContent = e.message; $("c_pemxnote").className = "bad"; }
 };
 
