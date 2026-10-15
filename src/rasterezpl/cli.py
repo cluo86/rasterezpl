@@ -4,7 +4,7 @@ rasterezpl printers                      the registry (printers, media, offsets)
 rasterezpl media                         media presets + the registry's
 rasterezpl usb                           USB printer-class devices on the bus
 rasterezpl status  --printer P | --to T  ~S,CHECK (00 = ready)
-rasterezpl text    --media M --font F --pt 5.4 "l1\\nl2" … -o job.ezpl     text labels → job
+rasterezpl text    --media M --font F --pt 5.4 "l1\\nl2" … | --rows F.csv [--template T] -o job.ezpl   text labels → job
 rasterezpl image   --media M a.png b.png … -o job.ezpl                     bitmaps → job (one per area)
 rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
@@ -71,7 +71,27 @@ def _parser() -> argparse.ArgumentParser:
     q = sub.add_parser(
         "text", help="text labels → a job file (one label per positional argument, \\n = new line)"
     )
-    q.add_argument("labels", nargs="+", help='label texts, e.g. "line 1\\nline 2"')
+    q.add_argument("labels", nargs="*", help='label texts, e.g. "line 1\\nline 2" (or --rows)')
+    q.add_argument(
+        "--rows",
+        help="a .csv / .tsv file (delimiter sniffed, header line names the columns): one label per row",
+    )
+    q.add_argument(
+        "--template",
+        default="",
+        help="with --rows: the label text per row, {column} fields and \\n (default: every column a line)",
+    )
+    q.add_argument(
+        "--no-header", action="store_true", help="with --rows: the file has no header (col1, col2, …)"
+    )
+    q.add_argument(
+        "--layout",
+        default="plain",
+        help="a decoration around the text (rasterezpl.layouts), e.g. barcode-below",
+    )
+    q.add_argument(
+        "--qr", help="what the QR / barcode layouts encode: {n}, {column} with --rows, or a fixed text"
+    )
     q.add_argument("--media", required=True)
     q.add_argument(
         "--font", required=True, help="a face name known to rasterezpl (Arial, DejaVu Sans, …) or a .ttf path"
@@ -251,19 +271,35 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "text":
         _media(reg, args.media)  # a clear error for an unknown media name
-        labels = [
-            re.sub(r"\\n", "\n", t) for t in args.labels
-        ]  # a literal \n on the command line = a new line
-        spec = Spec(
-            media=args.media,
-            font=args.font,
-            pt=args.pt,
-            labels=labels,
-            align=args.align,
-            fit=args.fit,
-            area=args.area,
-            stroke=args.stroke,
-        )
+        if bool(args.labels) == bool(args.rows):
+            sys.exit("text: give label texts or --rows FILE, not both, not neither")
+        d: dict = {
+            "media": args.media,
+            "font": args.font,
+            "pt": args.pt,
+            "align": args.align,
+            "fit": args.fit,
+            "area": args.area,
+            "stroke": args.stroke,
+            "layout": args.layout,
+            "qr": args.qr,
+        }
+        if args.rows:
+            try:
+                d["rows"] = Path(args.rows).read_text(encoding="utf-8-sig")
+            except OSError as e:
+                sys.exit(f"--rows {args.rows}: {e}")
+            d["template"], d["header"] = args.template, not args.no_header
+        else:
+            d["labels"] = [
+                re.sub(r"\\n", "\n", t) for t in args.labels
+            ]  # a literal \n on the command line = a new line
+            if args.qr:
+                d["qrs"] = [args.qr] * len(d["labels"])
+        try:
+            spec = Spec.from_dict(d)
+        except ValueError as e:
+            sys.exit(str(e))
         try:
             data, m, _, texts = render(reg, spec)
         except ValueError as e:

@@ -11,7 +11,10 @@ so the result is an ordinary job file: it prints through the same plan / print s
 Text input: one label per block, blocks separated by a blank line, lines within a block are the label's lines;
 ``{n}`` in any line is the running number (``start`` and up); ``copies`` repeats each label.
 
-Rows input: a header line and TSV/CSV rows, with a template whose ``{column}`` fields are filled per row.
+Rows input: a header line and TSV/CSV rows (a pasted sheet or an opened .csv — the delimiter is sniffed among
+tab, comma and semicolon; a BOM and CRLF are tolerated; blank rows are skipped), with a template whose
+``{column}`` fields are filled per row; without a template every column is a line. ``header: false`` names the
+columns col1, col2, … when the file has none.
 
 Easy-Mark input: a ``.pemx`` project (a zip with ``project.json``) — every series' data are the label texts,
 the series style carries the point size; the media is chosen in the form (the project names the stock).
@@ -62,6 +65,9 @@ class Spec:
         default_factory=list
     )  # the per-label QR data, parallel to `labels` (filled by from_dict)
     stroke: int = 0  # extra dots of ink around every glyph: 1–2 = bolder, for a head that drops thin strokes
+    rows: str | None = None  # the rows input as given (kept in the sidecar: the recipe reloads with its data)
+    template: str | None = None  # the per-row template that made `labels` from `rows`
+    header: bool = True  # rows input: the first line names the columns (false: col1, col2, …)
 
     @classmethod
     def from_dict(cls, d: dict) -> Spec:
@@ -72,10 +78,11 @@ class Spec:
             labels = parse_text(str(d["text"]))
             if qr_tpl and not qrs:
                 qrs = [qr_tpl] * len(labels)  # {n} is filled at expand time
+        header = bool(d.get("header", True))
         if labels is None and d.get("rows") is not None:
-            labels = parse_rows(str(d["rows"]), str(d.get("template", "")))
+            labels = parse_rows(str(d["rows"]), str(d.get("template", "")), header=header)
             if qr_tpl and not qrs:
-                qrs = parse_rows(str(d["rows"]), qr_tpl)
+                qrs = parse_rows(str(d["rows"]), qr_tpl, header=header)
         if labels is None and qr_tpl and not qrs:  # a QR alone, no text
             labels, qrs = [""], [qr_tpl]
         return cls(
@@ -96,6 +103,9 @@ class Spec:
             qr=qr_tpl,
             qrs=qrs,
             stroke=max(0, int(d.get("stroke", 0) or 0)),
+            rows=(str(d["rows"]) if d.get("rows") is not None else None),
+            template=(str(d["template"]) if d.get("template") is not None else None),
+            header=header,
         )
 
 
@@ -111,26 +121,74 @@ def parse_text(text: str) -> list[str]:
     return out
 
 
-def parse_rows(rows: str, template: str) -> list[str]:
-    """A header line + rows (tab or comma separated) → one label per row from `template`, whose {column}
-    fields are filled from that row (``\\n`` in the template = a new line)."""
-    text = rows.replace("\r\n", "\n").strip("\n")
-    if not text:
+def sniff_delimiter(first_line: str) -> str:
+    """Tab if the line has one, else whichever of ';' and ',' occurs more (comma on a tie), else comma."""
+    if "\t" in first_line:
+        return "\t"
+    return ";" if first_line.count(";") > first_line.count(",") else ","
+
+
+def read_rows(rows: str, header: bool = True) -> tuple[list[str], list[dict[str, str]]]:
+    """The columns and the rows of a pasted / opened sheet: BOM and CRLF tolerated, delimiter sniffed on the
+    first line, cells stripped, rows with every cell blank skipped. Without a header the columns are col1…colN
+    (as wide as the widest row)."""
+    text = rows.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+    if not text.strip():
+        return [], []
+    delim = sniff_delimiter(text.split("\n", 1)[0])
+    raw = [r for r in csv.reader(io.StringIO(text), delimiter=delim)]
+    raw = [[c.strip() for c in r] for r in raw]
+    if header:
+        cols = [c for c in raw[0]]
+        body = raw[1:]
+    else:
+        width = max((len(r) for r in raw), default=0)
+        cols = [f"col{i}" for i in range(1, width + 1)]
+        body = raw
+    if len(set(cols)) != len(cols) or any(not c for c in cols):
+        raise ValueError(f"the header must name every column once (columns: {', '.join(cols) or 'none'})")
+    out = []
+    for r in body:
+        if not any(r):
+            continue
+        out.append({c: (r[i] if i < len(r) else "") for i, c in enumerate(cols)})
+    return cols, out
+
+
+def template_fields(template: str) -> list[str]:
+    return re.findall(r"\{([^}:]+)(?::[^}]*)?\}", template)
+
+
+def parse_rows(rows: str, template: str, header: bool = True) -> list[str]:
+    """Rows (see ``read_rows``) → one label per row from `template`, whose {column} fields are filled from that
+    row (``\\n`` in the template = a new line, ``{n}`` = the row number); no template = every column a line."""
+    cols, body = read_rows(rows, header)
+    if not cols:
         return []
-    dialect = "excel-tab" if "\t" in text.split("\n", 1)[0] else "excel"
-    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
     tpl = template.replace("\\n", "\n")
-    fields = re.findall(r"\{([^}:]+)(?::[^}]*)?\}", tpl)
-    header = reader.fieldnames or []
-    missing = [f for f in fields if f not in header and f != "n"]
+    fields = template_fields(tpl)
+    missing = [f for f in fields if f not in cols and f != "n"]
     if missing:
         raise ValueError(
-            f"template fields not in the header: {', '.join(missing)} (columns: {', '.join(header)})"
+            f"template fields not in the header: {', '.join(missing)} (columns: {', '.join(cols)})"
         )
     out = []
-    for i, row in enumerate(reader, 1):
-        vals = {k: (v or "").strip() for k, v in row.items() if k is not None}
+    for i, vals in enumerate(body, 1):
         out.append(tpl.format(**vals, n=i) if fields else "\n".join(vals.values()))
+    return out
+
+
+def probe_rows(rows: str, template: str = "", header: bool = True, sample: int = 3) -> dict:
+    """What the page shows before composing: the columns, the row count, the first labels the template makes
+    (or the missing fields, as an error)."""
+    cols, body = read_rows(rows, header)
+    out: dict = {"columns": cols, "rows": len(body)}
+    try:
+        labels = parse_rows(rows, template, header)
+        out["labels"] = len(labels)
+        out["sample"] = labels[:sample]
+    except ValueError as e:
+        out["error"] = str(e)
     return out
 
 
@@ -290,6 +348,37 @@ def preview_png(reg: Registry, spec: Spec, root: Path | None = None, block: int 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def list_composed(root: Path, n: int = 30) -> list[dict]:
+    """The composed jobs' sidecars under <root>/composed, newest first: what a reload needs to show."""
+    d = root / COMPOSED_DIR
+    if not d.is_dir():
+        return []
+    out = []
+    for p in d.glob("*.json"):
+        try:
+            side = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not p.with_suffix(".ezpl").exists():
+            continue
+        out.append(
+            {
+                "spec": f"{COMPOSED_DIR}/{p.name}",
+                "file": f"{COMPOSED_DIR}/{p.stem}.ezpl",
+                "name": side.get("name", p.stem),
+                "created": side.get("created", ""),
+                "labels": len(side.get("texts") or []),
+                "media": side.get("media", ""),
+                "layout": side.get("layout", "plain"),
+                "font": side.get("font", ""),
+                "pt": side.get("pt"),
+                "input": "rows" if side.get("rows") else "text",
+            }
+        )
+    out.sort(key=lambda r: (r["created"], r["name"]), reverse=True)
+    return out[:n]
 
 
 def read_spec(root: Path, rel: str) -> dict:

@@ -29,7 +29,16 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from . import __version__
-from .compose import Spec, compose, fonts_available, import_pemx, preview_png, read_spec
+from .compose import (
+    Spec,
+    compose,
+    fonts_available,
+    import_pemx,
+    list_composed,
+    preview_png,
+    probe_rows,
+    read_spec,
+)
 from .jobs import LOG_NAME, holds, list_files, plan, proof_png, read_log, run
 from .registry import Registry, load
 
@@ -48,11 +57,21 @@ ENDPOINTS: list[tuple[str, str, str]] = [
     ("GET", "/api/files", "every .ezpl under the root: blocks, labels, matching media, printers"),
     ("GET", "/api/proof?file=F&label=N", "PNG proof of the web row holding label N"),
     ("GET", "/api/spec?file=composed/x.json", "a composed job's spec (to reload the form)"),
+    (
+        "GET",
+        "/api/composed?n=30",
+        "the composed jobs, newest first: name, labels, media, layout, input (a recipe list)",
+    ),
     ("GET", "/api/log?n=50", "the last n print-log entries"),
     ("POST", "/api/plan", '{"jobs":[{"file","labels"?,"printer"?}]} → the plan, nothing sent'),
     ("POST", "/api/print", '{"jobs":[…],"dry_run"?} → plan + one job per file; 409 while any row is refused'),
     ("POST", "/api/compose", 'a Spec (+ "preview": true for the PNG of row 1) → composed/<name>-<hash>.ezpl'),
     ("POST", "/api/import", '{"pemx": <base64>} → an Easy-Mark project\'s texts, point size, part'),
+    (
+        "POST",
+        "/api/rows",
+        '{"rows", "template"?, "header"?} → the columns, row count, the first labels (or the missing fields)',
+    ),
 ]
 
 
@@ -205,6 +224,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._bytes(png, "image/png")
         if path == "/api/spec":
             return self._json(read_spec(self.root, self._query().get("file", "")))
+        if path == "/api/composed":
+            return self._json(list_composed(self.root, int(self._query().get("n", "30"))))
         if path == "/api/log":
             return self._json(read_log(self.log_path, int(self._query().get("n", "50"))))
         return self._json({"error": f"no such endpoint {path}"}, 404)
@@ -234,6 +255,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(compose(self.root, self.reg, spec))
             if path == "/api/import":
                 return self._json(import_pemx(base64.b64decode(str(doc.get("pemx", "")))))
+            if path == "/api/rows":
+                return self._json(
+                    probe_rows(
+                        str(doc.get("rows", "")), str(doc.get("template", "")), bool(doc.get("header", True))
+                    )
+                )
             if path in ("/api/plan", "/api/print"):
                 jobs = doc.get("jobs")
                 if not isinstance(jobs, list) or not jobs:

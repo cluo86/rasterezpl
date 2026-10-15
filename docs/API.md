@@ -73,6 +73,15 @@ label with a mm scale.
 ### `GET /api/spec?file=composed/x.json`
 A composed job's sidecar: the Spec it was made from, the font path, the expanded texts, when.
 
+### `GET /api/composed?n=30`
+The composed jobs under `<root>/composed`, newest first — the recipe list:
+```json
+[{"spec": "composed/dco-1a2b3c4d.json", "file": "composed/dco-1a2b3c4d.ezpl", "name": "dco", "created": "2026-10-15T14:02:11",
+  "labels": 12, "media": "panduit-s150x225vaty-2up", "layout": "barcode-below", "font": "Inter", "pt": 5.4, "input": "rows"}]
+```
+`GET /api/spec?file=…` on the `spec` path gives the full recipe (every Spec field, the `rows` and `template`
+included; the picture is not kept).
+
 ### `GET /api/log?n=50`
 The last `n` print-log entries, oldest first:
 `[{"ts": "2026-09-30T12:07:01", "file": "…", "labels": "1-4", "count": 4, "printer": "tdp43me",
@@ -109,7 +118,8 @@ A Spec, in one of three input forms:
 | `font` | a face name from `/api/fonts` (or a file under `<root>/fonts`) — no substitution: a missing face is a 400 |
 | `pt` | point size |
 | `text` | labels as text: one per block, blocks separated by a blank line; `{n}` = running number |
-| `rows` + `template` | a header line and TSV/CSV rows; the template's `{column}` fields are filled per row, `\n` = new line; `{n}` = row number |
+| `rows` + `template` | a sheet as text — a header line and rows, delimiter sniffed among tab / comma / semicolon, BOM and CRLF tolerated, blank rows skipped; the template's `{column}` fields are filled per row, `\n` = new line, `{n}` = row number; no template = every column on its own line. Both are kept in the sidecar |
+| `header` | with `rows`: the first line names the columns (default true); `false` names them `col1`, `col2`, … |
 | `labels` | the labels already as a list of strings (lines joined by `\n`) |
 | `name` | the file stem (default `labels`) |
 | `align` | `center` (default) or `left` |
@@ -129,6 +139,11 @@ A Spec, in one of three input forms:
 Response: `{"file": "composed/name-1a2b3c4d.ezpl", "spec": "composed/name-1a2b3c4d.json", "labels": 6,
 "blocks": 3, "media": "…", "font_path": "…"}`. The file name carries the first 8 hex digits of the job's SHA-256,
 so the same content composes to the same file.
+
+### `POST /api/rows`
+`{"rows": "<a sheet as text>", "template": "{name}\nR{rack}", "header": true}` → what the page shows before
+composing: `{"columns": ["name", "rack"], "rows": 12, "labels": 12, "sample": ["Alice\nR6222", …]}` (the first
+three labels), or with a template field the header lacks, `columns`, `rows` and an `error` naming the field.
 
 ### `POST /api/import`
 `{"pemx": "<base64 of an Easy-Mark Plus .pemx>"}` →

@@ -160,11 +160,20 @@ whose barcode scans to exactly its text — and `barcode-only` the bars alone. T
 whole-dot module that fits the label, and refuse a code that would print finer than two dots per module.
 
 
-The page composes jobs too: type labels (one per block, `{n}` = running number), paste rows with a header and a
-template like `{device} {port}\nRack {rack} U{u}`, or open an Easy-Mark `.pemx` project (its series data are the
-texts). Pick the media and a face the server machine has, preview the exact print, compose → the job lands under
-`<root>/composed/` with a `.json` sidecar (the spec, reloadable) and in the cart. No silent font substitution: a
-face that is not on the machine is a refusal.
+The page composes jobs too: type labels (one per block, `{n}` = running number), give a **list of labels** — open
+a `.csv` / `.tsv` or paste a sheet, one label per row, with a template like `{device} {port}\nRack {rack} U{u}`
+saying which columns go where (the columns appear as buttons; no template = every column on its own line; a
+file without a header line is `col1`, `col2`, …; the delimiter is sniffed, a BOM and blank rows are tolerated,
+and the count and the first label are shown before anything is composed) — or open an Easy-Mark `.pemx`
+project (its series data are the texts). Pick the media and a face the server machine has, preview the exact
+print, compose → the job lands under `<root>/composed/` with a `.json` sidecar (the spec, with the list and the
+template) and in the cart. No silent font substitution: a face that is not on the machine is a refusal.
+
+A composed job is a **recipe**: *recent compositions* lists them (media, face, size, layout, weight, template,
+input) and *reload* puts one back in the form — the favour someone asks for every week is: reload, swap the
+list, preview, print. The same from the command line: `rasterezpl text --rows list.csv --template "{name}\nR{rack}"
+--layout barcode-below --qr "{rack}" …`. Nothing here is a drawing tool: the input is a list and a named layout,
+the output is the exact raster, and the same recipe on the same list prints the same labels next month.
 
 ## Library
 
