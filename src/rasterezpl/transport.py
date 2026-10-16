@@ -195,6 +195,39 @@ def status(target: str) -> str:
     return f"file spool: {d} is not a writable directory"
 
 
+TCP_CHUNK = 64 * 1024
+
+
+def send_tcp(
+    data: bytes, host: str, port: int = 9100, timeout_s: float = 30.0, deadline_s: float = 900.0
+) -> int:
+    """Stream a job over raw TCP (port 9100) the way the USB path does: in chunks, retrying a stalled chunk until
+    ``deadline_s``. The printer's Ethernet board takes a big job only as fast as the printer prints it, so one
+    ``sendall`` of a 128-label job (~1 MB) stalls past the socket timeout and dies with TimeoutError after part of
+    the job is in the printer (2026-10-16: the first bundle of an eight-bundle cart on the TDP43ME NetPS board).
+    Returns the bytes sent; raises RuntimeError naming the byte count when the printer stops taking data."""
+    import time
+
+    sent = 0
+    t_end = time.monotonic() + deadline_s
+    with socket.create_connection((host, port), timeout=timeout_s) as s:
+        s.settimeout(timeout_s)
+        view = memoryview(data)
+        while sent < len(view):
+            try:
+                n = s.send(view[sent : sent + TCP_CHUNK])
+                if n == 0:
+                    raise RuntimeError(f"{host}:{port}: connection closed after {sent} bytes")
+                sent += n
+            except TimeoutError:
+                if time.monotonic() > t_end:
+                    raise RuntimeError(
+                        f"{host}:{port}: printer stopped taking data for {deadline_s:.0f} s after {sent} bytes "
+                        "(paused, out of media or ribbon, or a jam?)"
+                    ) from None
+    return sent
+
+
 def send(
     data: bytes, target: str, m: Media | None = None, offset_in: tuple[float, float] = (0.0, 0.0)
 ) -> str:
@@ -208,9 +241,8 @@ def send(
     if target.startswith("tcp://"):
         host, _, p = target[6:].partition(":")
         port = int(p) if p else 9100
-        with socket.create_connection((host, port), timeout=10) as s:
-            s.sendall(data)
-        return f"sent {len(data)} bytes ({n_labels} labels) to {host}:{port}"
+        sent = send_tcp(data, host, port)
+        return f"sent {sent} bytes ({n_labels} labels) to {host}:{port}"
     if target.startswith("usb:"):
         with UsbPrinter(target[4:]) as pr:
             n = pr.write(data)
