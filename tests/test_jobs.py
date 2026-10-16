@@ -70,7 +70,9 @@ def test_plan_ambiguity_format_and_run(site):
     log = root / LOG_NAME
     assert run(root, reg, rows, log, dry_run=True) == ["dry run — nothing sent"] and not log.exists()
     notes = run(root, reg, rows, log)
-    assert len(notes) == 2 and site["t1"].exists() and site["t2"].exists()
+    # one note per row, and between two rows the wait for the printer (a file spool answers ready at once)
+    assert len(notes) == 3 and notes[1] == "printer ready (00 file spool (writable))"
+    assert site["t1"].exists() and site["t2"].exists()
     assert rz.count_labels(site["t1"].read_bytes()) == 2 and site["t1"].read_bytes().startswith(
         b"^R10\r~Q-2\r"
     )

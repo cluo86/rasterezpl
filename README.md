@@ -67,6 +67,33 @@ stream, after the selection and before the heat: never selectable, never counted
 and an END label in the hand is proof the whole stream arrived. Two blocks per job (a two-across web spends two
 labels per mark); off unless asked for. `--proof` shows them as the first and last page.
 
+## Long jobs on an Ethernet board
+
+Learned on a Panduit TDP43ME with the NetPS Ethernet board (`tcp://…:9100`), 2026-10-16, eight 128-label jobs
+of ~1.2 MB each:
+
+- **Accepted is not printed.** The board takes a 1.2 MB job in 35 s to 2 min and prints it from its buffer over
+  the following minutes. "sent 1,273,901 bytes" means the board has it, not that the roll does. The END label of
+  `--bookends` on the roll is the physical idle gate: a job is done when its END is in your hand.
+- **One connection at a time.** A connection opened while the board still prints the previous job is reset — the
+  send dies with a broken pipe after some bytes, the roll shows that job's START and nothing behind it — and the
+  reset can wedge port 9100 until the board restarts its print server on its own (~90 s of refused connections
+  while ping and the web UI answer; its `/status.htm` says *Restart Server is ongoing*). Four single jobs, each
+  started after the crew saw the previous END, went through cleanly.
+- **What rasterezpl does about it (0.14.0).** Before every job the port is waited on: refused, timed out, or
+  closed at once by the board = not ready, retried with backoff for up to 900 s, never a failed job. A
+  connection the printer closes BEFORE any byte was accepted is retried — nothing is on the paper. One closed
+  after bytes were accepted is never retried: those labels are on the paper, and a resend would print them
+  twice. The error and the log name `host:port` and the bytes accepted; the operator reads the roll for the last
+  label printed and resumes with `--labels N-M`. Between two files of a cart the printer is waited for:
+  `--settle 180` waits that long and asks the printer nothing (recommended on the NetPS board — a 66-row job
+  prints in about that long; a status query is itself a connection); without it the printer's `~S,CHECK` is
+  polled until it answers `00`, and a printer whose status is unavailable gets no wait — the plan states which
+  wait is in force.
+- **Every send is logged**, success or failure — `print`, `printcart` and `POST /api/print` alike — with `ok`,
+  `bytes_sent` and `error`; `print` logs beside the job file (`--log` elsewhere). Before 0.14.0 only `printcart`
+  logged, and a day's single prints had no record but the terminal.
+
 ## Faded print
 
 Thermal transfer on polyester drops thin strokes when the head runs cool or fast. Two levers, independent:
@@ -151,6 +178,8 @@ rasterezpl printcart a.ezpl b.ezpl c.ezpl --bookends                      # a ST
 `--bookends` on a cart marks every file: each send is START, that file's labels, END (see `print --bookends`);
 the plan shows `+2 bookends` on each row and keeps `count` as the labels. The page has the same as a checkbox
 beside *print*, off by default, and the API takes `"bookends": true`; the print log marks each entry.
+`--settle SECONDS` is the wait between two files with no status query (see *Long jobs on an Ethernet board*);
+a failed send stops the cart, is logged, and the exit code is 1.
 
 ### Your own labels
 
@@ -206,6 +235,11 @@ img = rz.render_text(m.area_px(0)[2:], ["line 1", "line 2"], font, rz.pt_to_px(5
 data = rz.job(m, [[img, None]])           # one web row, second label blank
 rz.send(data, "usb:TDP43ME", m, offset_in=(0.013, 0.03))
 ```
+
+## Developing
+
+`make check` runs what CI runs — ruff, `ruff format --check`, mypy and the tests — in that order; run it before
+a push (CI was red for a week of releases on mypy errors nobody ran locally).
 
 ## Status
 

@@ -6,10 +6,10 @@ rasterezpl usb                           USB printer-class devices on the bus
 rasterezpl status  --printer P | --to T  ~S,CHECK (00 = ready)
 rasterezpl text    --media M --font F --pt 5.4 "l1\\nl2" … | --rows F.csv [--template T] -o job.ezpl   text labels → job
 rasterezpl image   --media M a.png b.png … -o job.ezpl                     bitmaps → job (one per area)
-rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status] [--dry-run] [--proof F.pdf|F.png]
+rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status] [--dry-run] [--proof F.pdf|F.png] [--bookends] [--log F]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
-rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run]              several files, one plan, one print
+rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run] [--bookends] [--settle S]   several files, one plan, one print
 rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--open]   the browser front end (server.py)
 rasterezpl demo    [DIR] [--no-open] [--no-serve]                         a playground: demo jobs + file-spool printers
 """
@@ -24,7 +24,7 @@ from pathlib import Path
 from . import __version__
 from .calibrate import ruler_job
 from .compose import Spec, render
-from .jobs import LOG_NAME, format_plan, parse_cart, plan, run
+from .jobs import LOG_NAME, format_plan, parse_cart, plan, run, send_logged
 from .media import Media
 from .registry import Registry, load
 from .stream import (
@@ -36,7 +36,7 @@ from .stream import (
     match_media,
     matching_media,
     parse_blocks,
-    retune,
+    parse_selection,
     select_labels,
 )
 from .text import find_font
@@ -136,6 +136,12 @@ def _parser() -> argparse.ArgumentParser:
         "--speed", type=int, help="^S ips for this print (default: the printer record's, else the file's)"
     )
     q.add_argument(
+        "--log",
+        help="print log, JSON lines — every send, success or failure (default <job file's directory>/"
+        + LOG_NAME
+        + ")",
+    )
+    q.add_argument(
         "--bookends",
         action="store_true",
         help="a START label before and an END label after the job, in the same send (black, hazard-striped, "
@@ -203,6 +209,15 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="a START and an END label around EVERY file's labels, in that file's send (see print --bookends)",
     )
+    q.add_argument(
+        "--settle",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="wait this long between two files and ask the printer nothing (an Ethernet board resets a "
+        "connection opened while it still prints the previous job from its buffer — 180 for the NetPS board); "
+        "default 0 = poll the printer's status until it answers 00, no wait when it has none",
+    )
     q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
     return p
 
@@ -259,11 +274,15 @@ def main(argv: list[str] | None = None) -> int:
             rows = plan(root, reg, parse_cart(args.entry))
         except ValueError as e:
             sys.exit(str(e))
-        print(format_plan(rows, bookends=args.bookends))
+        print(format_plan(rows, bookends=args.bookends, settle=args.settle))
         log = Path(args.log).expanduser() if args.log else root / LOG_NAME
-        for note in run(root, reg, rows, log, dry_run=args.dry_run, bookends=args.bookends):
+        for note in run(
+            root, reg, rows, log, dry_run=args.dry_run, bookends=args.bookends, settle=args.settle
+        ):
             print(note)
-        return 0 if all(r.ok for r in rows) else 2
+        if not all(r.ok for r in rows):
+            return 2
+        return 1 if any(r.sent is False for r in rows) else 0
 
     if args.cmd == "printers":
         if not reg.printers:
@@ -282,8 +301,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
     if args.cmd == "usb":
-        for d in list_usb_printers():
-            print(f"{d['ids']}  {d['manufacturer']} {d['product']}  serial {d['serial'] or '?'}")
+        for dev in list_usb_printers():
+            print(f"{dev['ids']}  {dev['manufacturer']} {dev['product']}  serial {dev['serial'] or '?'}")
         return 0
     if args.cmd == "status":
         target, *_ = _resolve(reg, args)
@@ -369,14 +388,18 @@ def main(argv: list[str] | None = None) -> int:
             data = select_labels(data, args.labels, m)
         elif args.first:
             data = first_labels(data, args.first)
-        n_labels = count_labels(data) * m.labels_per_block
+        n_labels = (  # the labels going: a partly selected web row counts its selected labels only
+            len(parse_selection(args.labels, total * m.labels_per_block))
+            if args.labels
+            else count_labels(data) * m.labels_per_block
+        )
         if args.bookends:  # after the selection, before the heat: never selectable, retuned like the labels
             from .bookends import with_bookends
 
-            spec = args.labels or (f"1-{n_labels}" if n_labels > 1 else "1")  # --first / whole file = a range
+            sel = args.labels or (f"1-{n_labels}" if n_labels > 1 else "1")  # --first / whole file = a range
             try:
                 data = with_bookends(
-                    m, data, args.file, spec, total * m.labels_per_block, n_labels, pr.name if pr else target
+                    m, data, args.file, sel, total * m.labels_per_block, n_labels, pr.name if pr else target
                 )
             except ValueError as e:
                 sys.exit(str(e))
@@ -386,7 +409,6 @@ def main(argv: list[str] | None = None) -> int:
         dk = args.darkness if args.darkness is not None else (pr.darkness if pr else None)
         sp = args.speed if args.speed is not None else (pr.speed if pr else None)
         if dk is not None or sp is not None:
-            data = retune(data, dk, sp)
             print(
                 f"heat for this print: darkness {dk if dk is not None else 'file'}, speed {sp if sp is not None else 'file'}"
             )
@@ -400,13 +422,13 @@ def main(argv: list[str] | None = None) -> int:
             from .proof import proof_document
 
             try:
-                n = proof_document(
+                n_rows = proof_document(
                     m, data, args.proof, caption=f"{Path(args.file).name} → {pr.name if pr else target}"
                 )
             except ValueError as e:
                 sys.exit(str(e))
             print(
-                f"proof: {args.proof} ({n} web rows, {m.dpi} dpi — the print, row by row, without the registration shift)"
+                f"proof: {args.proof} ({n_rows} web rows, {m.dpi} dpi — the print, row by row, without the registration shift)"
             )
         if args.dry_run:
             if offset != (0.0, 0.0):
@@ -419,7 +441,25 @@ def main(argv: list[str] | None = None) -> int:
             if not st.startswith("00"):
                 print("not ready — nothing sent")
                 return 2
-        print(send(data, target, m, offset))
+        log = Path(args.log).expanduser() if args.log else Path(args.file).resolve().parent / LOG_NAME
+        ok, note = send_logged(
+            data,
+            target,
+            log,
+            file=args.file,
+            labels=args.labels or (f"1-{n_labels}" if n_labels > 1 else "1"),
+            count=n_labels,
+            bookends=args.bookends,
+            printer=pr.name if pr else target,
+            media=m,
+            offset_in=offset,
+            darkness=dk,
+            speed=sp,
+        )
+        print(note)
+        print(f"logged in {log}")
+        if not ok:
+            return 1
         if offset != (0.0, 0.0):
             print(f"registration {offset[0]:+.3f},{offset[1]:+.3f} in sent as ^R / ~Q")
         return 0

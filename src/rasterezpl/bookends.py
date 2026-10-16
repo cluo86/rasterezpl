@@ -24,9 +24,13 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .media import EOL, Media
 from .stream import LabelBlock, parse_blocks, pattern_blocks
+
+if TYPE_CHECKING:
+    from PIL import ImageFont
 
 TIMESTAMP = "%Y-%m-%d %H:%M"  # local, the clock of the print log's ``ts``
 BORDER_INSET_MM = 1.0
@@ -55,7 +59,7 @@ def end_lines(file: str, count: int, ts: str) -> list[str]:
     ]
 
 
-def _font(name: str, px: int):
+def _font(name: str, px: int) -> ImageFont.FreeTypeFont:
     from PIL import ImageFont
 
     from .text import find_font
@@ -93,7 +97,7 @@ def _wrap(lines: Sequence[str], font, width: int) -> list[str]:
     return out
 
 
-def _largest(face: str, text: str, max_w: float, max_h: float, px: int):
+def _largest(face: str, text: str, max_w: float, max_h: float, px: int) -> ImageFont.FreeTypeFont:
     """The largest size of ``face`` from ``px`` down (never under 4 dots/em) at which ``text`` fits
     ``max_w`` × ``max_h`` dots — the 4-dot floor is returned as is, the caller's area is already tiny."""
     px = max(4, px)
@@ -106,7 +110,9 @@ def _largest(face: str, text: str, max_w: float, max_h: float, px: int):
     return _font(face, 4)
 
 
-def _fit_small(lines: Sequence[str], face: str, width: int, height: int, px: int) -> tuple[list[str], object]:
+def _fit_small(
+    lines: Sequence[str], face: str, width: int, height: int, px: int
+) -> tuple[list[str], ImageFont.FreeTypeFont]:
     """The small lines wrapped and the font shrunk until every line fits the width and the block fits the
     height — never clipped."""
     while px >= 4:

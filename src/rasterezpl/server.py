@@ -67,8 +67,9 @@ ENDPOINTS: list[tuple[str, str, str]] = [
     (
         "POST",
         "/api/print",
-        '{"jobs":[…],"dry_run"?,"bookends"?} → plan + one job per file (bookends: a START and an END label '
-        "around every file's labels, same send); 409 while any row is refused",
+        '{"jobs":[…],"dry_run"?,"bookends"?,"settle"?} → plan + one job per file (bookends: a START and an END '
+        "label around every file's labels, same send; settle: seconds between files instead of a status poll); "
+        "409 while any row is refused, 500 when a send fails (logged, the cart stops)",
     ),
     ("POST", "/api/compose", 'a Spec (+ "preview": true for the PNG of row 1) → composed/<name>-<hash>.ezpl'),
     ("POST", "/api/import", '{"pemx": <base64>} → an Easy-Mark project\'s texts, point size, part'),
@@ -275,14 +276,24 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json({"plan": [asdict(r) for r in rows]})
                 dry = bool(doc.get("dry_run"))
                 bookends = bool(doc.get("bookends"))
+                settle = float(doc.get("settle") or 0)
                 refused = any(r.refused for r in rows)
                 with self.lock:  # one job at a time on the bus
-                    notes = run(self.root, self.reg, rows, self.log_path, dry_run=dry, bookends=bookends)
-                sent = not dry and not refused
-                return self._json(
-                    {"plan": [asdict(r) for r in rows], "notes": notes, "sent": sent, "bookends": bookends},
-                    200 if sent or dry else 409,
-                )
+                    notes = run(
+                        self.root,
+                        self.reg,
+                        rows,
+                        self.log_path,
+                        dry_run=dry,
+                        bookends=bookends,
+                        settle=settle,
+                    )
+                failed = [r for r in rows if r.sent is False]
+                sent = not dry and not refused and not failed
+                body = {"plan": [asdict(r) for r in rows], "notes": notes, "sent": sent, "bookends": bookends}
+                if failed:
+                    body["error"] = failed[0].error or "a send failed"
+                return self._json(body, 200 if sent or dry else (500 if failed else 409))
             return self._json({"error": f"no such endpoint {path}"}, 404)
         except ValueError as e:
             return self._json({"error": str(e)}, 400)

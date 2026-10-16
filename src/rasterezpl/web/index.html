@@ -100,7 +100,7 @@ function renderCart() {
   PLAN = null;
   if (!CART.length) { $("cart").innerHTML = "<b>cart</b> <span class=\"muted\">empty — compose labels or add files below</span>"; return; }
   $("cart").innerHTML = `<b>cart</b> ${CART.length} job(s) <button class="rm" onclick="clearCart()">clear</button><table>${CART.map((c, i) => `<tr><td><code>${esc(c.file)}</code></td><td>labels ${esc(c.labels || "all")}</td><td>${esc(c.printer || "auto")}</td><td><button class="rm" onclick="rmCart(${i})">remove</button></td></tr>`).join("")}</table>
-  <button class="big" onclick="doPlan()">plan (nothing sent)</button> <button class="big" id="printbtn" disabled onclick="doPrint()">print</button> <label title="a black, hazard-striped START label before and an END label (with a CUT HERE band) after every file's labels, in the same send — the paper shows where a job begins and that it completed; two extra labels per file, never counted"><input type="checkbox" id="bookends"> bookends (START / END labels per file)</label><div id="plan"></div><div id="note"></div>`;
+  <button class="big" onclick="doPlan()">plan (nothing sent)</button> <button class="big" id="printbtn" disabled onclick="doPrint()">print</button> <label title="a black, hazard-striped START label before and an END label (with a CUT HERE band) after every file's labels, in the same send — the paper shows where a job begins and that it completed; two extra labels per file, never counted"><input type="checkbox" id="bookends"> bookends (START / END labels per file)</label> <label title="seconds to wait between two files, asking the printer nothing — an Ethernet board resets a connection opened while it still prints the previous job (180 for the NetPS board); 0 = poll the printer's status until it answers 00">settle <input type="text" id="settle" size="3" value="0"> s between files</label><div id="plan"></div><div id="note"></div>`;
 }
 async function doPlan() {
   try {
@@ -114,14 +114,15 @@ async function doPrint() {
   if (!PLAN) return;
   $("printbtn").disabled = true; $("note").textContent = "sending…";
   try {
-    const j = await api("/api/print", {jobs: CART, bookends: $("bookends").checked});
+    const settle = parseFloat($("settle").value) || 0;
+    const j = await api("/api/print", {jobs: CART, bookends: $("bookends").checked, settle});
     $("note").innerHTML = `<pre>${esc(j.notes.join("\n"))}</pre>`;
     if (j.sent) { CART = []; saveCart(); loadLog(); setTimeout(renderCart, 4000); }
   } catch (e) { $("note").textContent = e.message; $("note").className = "bad"; }
 }
 async function loadLog() {
   const j = await api("/api/log?n=20");
-  $("log").innerHTML = j.length ? `<table>${j.slice().reverse().map(e => `<tr><td>${esc(e.ts)}</td><td><code>${esc(e.file)}</code></td><td>${esc(e.labels)} (${e.count})</td><td>${esc(e.printer)}</td><td>${esc(e.note)}</td></tr>`).join("")}</table>` : "nothing printed yet";
+  $("log").innerHTML = j.length ? `<table>${j.slice().reverse().map(e => `<tr class="${e.ok === false ? "bad" : ""}"><td>${esc(e.ts)}</td><td><code>${esc(e.file)}</code></td><td>${esc(e.labels)} (${e.count})${e.bookends ? " +2 bookends" : ""}</td><td>${esc(e.printer)}</td><td>${e.ok === false ? `<b>${esc(e.note)}</b> — ${esc(e.error || "")}` : esc(e.note)}</td></tr>`).join("")}</table>` : "nothing printed yet";
 }
 
 // ---- compose -----------------------------------------------------------------------------------------------

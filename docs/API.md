@@ -86,9 +86,13 @@ included; the picture is not kept).
 The last `n` print-log entries, oldest first:
 `[{"ts": "2026-09-30T12:07:01", "file": "…", "labels": "1-4", "count": 4, "printer": "tdp43me",
   "transport": "usb:0123ABCD", "note": "sent 23787 bytes (2 labels) to Panduit TDP43ME over USB",
-  "bookends": false}]`
-`count` is the labels; `bookends` says whether a START and an END block went around them (0.13.0; entries written
-before carry no such key).
+  "bookends": false, "ok": true, "bytes_sent": 23787}]`
+`count` is the labels; `bookends` says whether a START and an END block went around them (0.13.0). Since 0.14.0
+EVERY send is logged, success or failure — from `print`, `printcart` and this API — with `ok`, `bytes_sent` (what
+the printer accepted; with the registration prefix) and, on a failure, `error` (the message) and a `note` that
+says whether anything is on the paper: `FAILED — nothing on the paper (0 bytes accepted)` or `FAILED after N
+bytes — labels ARE on the paper up to where the stream stopped`. The keys of older lines are unchanged; lines
+written before 0.13.0 / 0.14.0 lack the newer keys.
 
 ## POST endpoints
 
@@ -105,14 +109,24 @@ omitted = the one registry printer holding the file's media (two candidates → 
 ```
 
 ### `POST /api/print`
-Same body as plan, plus `"dry_run": true` to stop after the plan, and `"bookends": true` to put a START block
-before and an END block after EVERY file's labels, in that file's send (off by default).
+Same body as plan, plus `"dry_run": true` to stop after the plan, `"bookends": true` to put a START block
+before and an END block after EVERY file's labels, in that file's send (off by default), and `"settle": 180`
+— seconds to wait between two files asking the printer nothing (default 0 = poll its status until `00`; a
+printer without status gets no wait).
 ```json
-{"plan": [...], "notes": ["a/b.ezpl labels 1-4,7 → sent … over USB"], "sent": true, "bookends": false}
+{"plan": [...], "notes": ["a/b.ezpl labels 1-4,7 → sent … over USB", "settled 180 s before the next job (no status query)", "…"],
+ "sent": true, "bookends": false}
 ```
 `sent` is false (and the status 409) while any row is refused: nothing goes to any printer until the cart is
 clean. With `dry_run` the status is 200 and `notes` is `["dry run — nothing sent"]` (with bookends:
 `["dry run — +2 bookends per file, nothing sent"]`).
+
+Every job waits for the print port to be ready before its first byte (refused / timed out / closed at once =
+not ready, retried with backoff for up to 900 s) — see the README, *Long jobs on an Ethernet board*. A send the
+printer cuts short is logged (`ok: false`, `bytes_sent`, `error`), stops the cart, and the response is 500 with
+`"error"` and the plan: each row carries `sent` (true / false / null = not attempted) and `error`. A job cut after
+0 bytes was retried already and may be sent again as it is; one cut after N bytes has labels on the paper — the
+operator reads the roll and resumes with a `labels` range.
 
 Bookends are the job's own start and end marks on the paper: black, hazard-striped, START naming the file, the
 labels of how many (`labels 97-128 of 128`), the count, the printer and the time; END with a CUT HERE band and

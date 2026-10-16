@@ -136,7 +136,8 @@ def test_print_dry_run_refused_and_real(site):
     st, j = _post(
         f"{b}/api/print", {"jobs": [{"file": "jobs/a.ezpl", "labels": "1-3"}, {"file": "other.ezpl"}]}
     )
-    assert st == 200 and j["sent"] is True and len(j["notes"]) == 2
+    assert st == 200 and j["sent"] is True and len(j["notes"]) == 3  # two sends, the wait between them
+    assert j["notes"][1].startswith("printer ready")
     spool = site["tiny"].read_bytes()
     assert spool.startswith(b"^R10\r~Q-2\r") and rz.count_labels(spool) == 2
     assert rz.count_labels(site["pand"].read_bytes()) == 1

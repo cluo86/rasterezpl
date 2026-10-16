@@ -36,7 +36,7 @@ from .stream import (
     select_labels,
     tightest,
 )
-from .transport import send
+from .transport import deliver, wait_idle
 
 SPEC_RE = re.compile(r"^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
 LOG_NAME = ".rasterezpl-printlog.jsonl"
@@ -59,6 +59,8 @@ class PlanRow:
     printer: str | None
     media: str | None
     refused: str | None
+    sent: bool | None = None  # after run(): True = delivered, False = the send failed, None = not attempted
+    error: str | None = None  # the failed send's message
 
     @property
     def ok(self) -> bool:
@@ -225,9 +227,17 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
     return rows
 
 
-def format_plan(rows: list[PlanRow], bookends: bool = False) -> str:
+def wait_policy(settle: float = 0.0) -> str:
+    """What happens between two files of a cart, as the plan states it."""
+    if settle > 0:
+        return f"between files: settle {settle:g} s, no status query"
+    return "between files: poll the printer's status until it answers 00 (--settle N waits N s instead; no status = no wait)"
+
+
+def format_plan(rows: list[PlanRow], bookends: bool = False, settle: float = 0.0) -> str:
     """The plan as a text table with a totals line (the CLI's output). ``count`` stays the real labels; with
-    ``bookends`` every clean row shows the START / END pair it will carry."""
+    ``bookends`` every clean row shows the START / END pair it will carry; with two or more clean rows the wait
+    between files (:func:`wait_policy`) is stated."""
     w = max([len(r.file) for r in rows] + [4])
     lines = [f"{'file':{w}s} {'labels':>7s}  {'printer':10s} labels"]
     for r in rows:
@@ -243,7 +253,80 @@ def format_plan(rows: list[PlanRow], bookends: bool = False) -> str:
         + (" (+2 bookends per file)" if bookends and ok else "")
         + (f"; {len(rows) - len(ok)} file(s) refused" if len(ok) < len(rows) else "")
     )
+    if len(ok) > 1:
+        lines.append(wait_policy(settle))
     return "\n".join(lines)
+
+
+def append_log(log: Path | None, entry: dict) -> None:
+    """One JSON line per send, success or failure. Keys: ts, file, labels, count, printer, transport, note,
+    bookends, ok, bytes_sent, and error on a failure — the keys of 0.3.1 … 0.13.0 unchanged, so every reader of
+    the old lines still parses the new."""
+    if log is None:
+        return
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def send_logged(
+    data: bytes,
+    target: str,
+    log: Path | None,
+    *,
+    file: str,
+    labels: str,
+    count: int,
+    bookends: bool,
+    printer: str,
+    media: Media | None,
+    offset_in: tuple[float, float] = (0.0, 0.0),
+    darkness: int | None = None,
+    speed: int | None = None,
+) -> tuple[bool, str]:
+    """Deliver one job (the heat retuned here when given) and log it either way — the one send path of
+    ``print``, ``printcart`` and ``POST /api/print``. Returns (ok, note): the transport's note, or on failure the
+    message with what the operator must know — nothing on the paper when 0 bytes went, else that labels ARE on
+    the paper and the resume range is theirs to read off the roll."""
+    heat = darkness is not None or speed is not None
+    if heat:
+        data = retune(data, darkness, speed)
+    entry = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "file": file,
+        "labels": labels,
+        "count": count,
+        "printer": printer,
+        "transport": target,
+        "note": "",
+        "bookends": bookends,
+        "ok": False,
+        "bytes_sent": 0,
+    }
+    try:
+        note, n = deliver(data, target, media, offset_in)
+    except Exception as e:  # SendError (bytes known), a USB or lp failure (bytes unknown = 0)
+        n = int(getattr(e, "bytes_sent", 0) or 0)
+        msg = f"{e.__class__.__name__}: {e}" if not isinstance(e, RuntimeError) else str(e)
+        entry["bytes_sent"] = n
+        entry["error"] = msg
+        entry["note"] = (
+            "FAILED — nothing on the paper (0 bytes accepted)"
+            if n == 0
+            else f"FAILED after {n} bytes — labels ARE on the paper up to where the stream stopped"
+        )
+        append_log(log, entry)
+        hint = (
+            "; the job can be sent again as it is"
+            if n == 0
+            else "; do NOT resend the whole job — read the roll for the last label printed and resume with --labels N-M"
+        )
+        return False, f"FAILED: {msg}{hint}"
+    if heat:
+        note += f" (darkness {darkness if darkness is not None else 'file'}, speed {speed if speed is not None else 'file'})"
+    entry.update(note=note, ok=True, bytes_sent=n)
+    append_log(log, entry)
+    return True, note
 
 
 def bookended(m: Media, data: bytes, row: PlanRow, pr, ts: str | None = None) -> bytes:
@@ -262,46 +345,55 @@ def run(
     dry_run: bool = False,
     to: str | None = None,
     bookends: bool = False,
+    settle: float = 0.0,
 ) -> list[str]:
-    """Send every row of a clean plan — nothing while any row is refused. One note per row; every real send is
-    appended to ``log`` as a JSON line (ts, file, labels, count, printer, transport, note, bookends). ``to``
-    overrides the transport for every row (a tcp://, lp: or file path — a test spool); the printer's media and
-    offset still apply. ``bookends`` puts a START block before and an END block after every row's labels, in
-    the same write (:mod:`rasterezpl.bookends`); ``count`` stays the labels."""
+    """Send every row of a clean plan — nothing while any row is refused. One note per row; EVERY send, success
+    or failure, is appended to ``log`` as a JSON line (:func:`append_log`). ``to`` overrides the transport for
+    every row (a tcp://, lp: or file path — a test spool); the printer's media and offset still apply.
+    ``bookends`` puts a START block before and an END block after every row's labels, in the same write
+    (:mod:`rasterezpl.bookends`); ``count`` stays the labels. Between two rows the printer is waited for
+    (:func:`rasterezpl.transport.wait_idle`: ``settle`` seconds, or its status until 00). A failed send stops
+    the cart: the rows after it are not sent, and the note says so."""
     if dry_run:
         return ["dry run — " + ("+2 bookends per file, " if bookends else "") + "nothing sent"]
     if any(r.refused for r in rows):
         return ["REFUSED rows in the plan — nothing sent (fix the cart and run again)"]
     notes = []
-    for r in rows:
+    for i, r in enumerate(rows):
         pr = reg.printers[r.printer or ""]
         m = reg.media[r.media or pr.media_name]
+        target = to or pr.transport
+        if i:
+            try:
+                notes.append(wait_idle(target, settle))
+            except RuntimeError as e:
+                notes.append(f"FAILED: {e}; {len(rows) - i} file(s) not sent")
+                r.sent, r.error = False, str(e)
+                break
         data = select_labels(confine(root, r.file).read_bytes(), r.labels, m)
         if bookends:
             data = bookended(m, data, r, pr)
-        heat = pr.darkness is not None or pr.speed is not None
-        if heat:
-            data = retune(data, pr.darkness, pr.speed)
-        target = to or pr.transport
-        note = send(data, target, pr.media, pr.offset_in)
-        if heat:
-            dk = pr.darkness if pr.darkness is not None else "file"
-            sp = pr.speed if pr.speed is not None else "file"
-            note += f" (darkness {dk}, speed {sp})"
+        ok, note = send_logged(
+            data,
+            target,
+            log,
+            file=r.file,
+            labels=r.labels,
+            count=r.count,
+            bookends=bookends,
+            printer=pr.name,
+            media=pr.media,
+            offset_in=pr.offset_in,
+            darkness=pr.darkness,
+            speed=pr.speed,
+        )
+        r.sent = ok
         notes.append(f"{r.file} labels {r.labels}{' +2 bookends' if bookends else ''} → {note}")
-        if log is not None:
-            entry = {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "file": r.file,
-                "labels": r.labels,
-                "count": r.count,
-                "printer": pr.name,
-                "transport": target,
-                "note": note,
-                "bookends": bookends,
-            }
-            with log.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        if not ok:
+            r.error = note
+            if i + 1 < len(rows):
+                notes.append(f"cart stopped: {len(rows) - i - 1} file(s) after {r.file} not sent")
+            break
     return notes
 
 

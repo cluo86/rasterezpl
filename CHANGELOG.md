@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.14.0 — 2026-10-16
+
+- Sends that survive an Ethernet board. On the TDP43ME's NetPS board a cart's second file, sent the instant the
+  first was accepted, died with a bare `BrokenPipeError` — the board was still printing the first from its
+  buffer, reset the new connection, and then refused port 9100 for ~90 s while it restarted its print server;
+  the roll showed the second job's START and nothing behind it, and no log line said how far it got. Now:
+  - `send_tcp` waits for the port before the first byte (refused, timed out, closed at once = not ready, backoff
+    up to 900 s), retries a connection reset BEFORE any byte was accepted (nothing on the paper), and never one
+    reset after (labels are on the paper — a resend prints them twice). Every failure is a `SendError` naming
+    host:port and the bytes accepted, never a traceback; `deliver()` returns the note and the bytes.
+  - Every send is logged, success or failure, from `print` too (beside the job file, `--log` elsewhere; before,
+    only `printcart` logged and a day's single prints had no record): the keys as before plus `ok`, `bytes_sent`
+    and `error`; the failure note says whether anything is on the paper; the page lists failed lines in red.
+  - Between two cart files the printer is waited for: `--settle SECONDS` / `"settle"` waits with no status
+    query (180 recommended for the NetPS board), else `~S,CHECK` is polled until `00`; a printer without status
+    gets no wait; the plan states which. A failed send stops the cart (exit 1, API 500 with the plan's `sent` /
+    `error` per row).
+  - README: *Long jobs on an Ethernet board* — accepted ≠ printed, one connection at a time, the END label as the
+    physical idle gate, the port-wedge + self-restart symptom.
+- CI: `mypy src` had failed on every push since 0.11.0 (ten errors in cli.py and bookends.py); fixed, and
+  `make check` runs ruff, mypy and the tests the way CI does.
+
 ## 0.13.0 — 2026-10-16
 
 - `--bookends` on `print` and `printcart`, `"bookends": true` on `POST /api/print`, a checkbox on the page (all
