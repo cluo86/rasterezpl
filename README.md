@@ -52,6 +52,7 @@ printers:
 
 ```
 rasterezpl print job.ezpl --printer tdp43me --labels 1-2 --status
+rasterezpl print job.ezpl --printer tdp43me --dry-run         # the guards + the summary, nothing sent
 ```
 
 ## Faded print

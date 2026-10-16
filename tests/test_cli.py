@@ -62,6 +62,16 @@ def test_registry_text_print_decode(tmp_path, capsys):
     )
     data = job.read_bytes()
     assert rz.count_labels(data) == 2  # 3 labels on a two-up media = 2 blocks
+    # --dry-run: the guards and the summary, nothing reaches the printer (0.11.2)
+    assert (
+        main(["--registry", str(reg), "print", str(job), "--printer", "filep", "--labels", "2", "--dry-run"])
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert (
+        "would send 1 blocks to filep" in out and "dry run — nothing sent" in out and "+0.100,-0.020" in out
+    )
+    assert not target.exists()
     # print via the registry printer: the offset goes in front, the media guard passes
     assert main(["--registry", str(reg), "print", str(job), "--printer", "filep", "--labels", "2"]) == 0
     spool = target.read_bytes()
@@ -71,6 +81,8 @@ def test_registry_text_print_decode(tmp_path, capsys):
     other.write_bytes(rz.job(rz.PANDUIT_S150X225VATY_2UP, [[None, None]]))
     with pytest.raises(SystemExit):
         main(["--registry", str(reg), "print", str(other), "--printer", "filep"])
+    with pytest.raises(SystemExit):  # a dry run refuses the same files
+        main(["--registry", str(reg), "print", str(other), "--printer", "filep", "--dry-run"])
     # decode to PNG
     png = tmp_path / "page.png"
     assert main(["--registry", str(reg), "decode", str(job), "-o", str(png)]) == 0

@@ -6,7 +6,7 @@ rasterezpl usb                           USB printer-class devices on the bus
 rasterezpl status  --printer P | --to T  ~S,CHECK (00 = ready)
 rasterezpl text    --media M --font F --pt 5.4 "l1\\nl2" … | --rows F.csv [--template T] -o job.ezpl   text labels → job
 rasterezpl image   --media M a.png b.png … -o job.ezpl                     bitmaps → job (one per area)
-rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status]
+rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status] [--dry-run]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
 rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run]              several files, one plan, one print
@@ -119,6 +119,11 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument("--first", type=int, help="only the first N label blocks")
     q.add_argument("--offset", help="override the printer's registration, x,y inches (x ≥ 0 → ^R, y → ~Q)")
     q.add_argument("--status", action="store_true", help="~S,CHECK first; refuse to send unless 00")
+    q.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="every guard and the summary (media match, blocks inside the areas, selection, heat, offset), send nothing",
+    )
     q.add_argument(
         "--darkness", type=int, help="^H 0–19 for this print (default: the printer record's, else the file's)"
     )
@@ -357,9 +362,16 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"heat for this print: darkness {dk if dk is not None else 'file'}, speed {sp if sp is not None else 'file'}"
             )
+        verb = "would send" if args.dry_run else "sending"
         print(
-            f"{args.file}: {total} blocks × {m.labels_per_block} labels for {m.name}; sending {count_labels(data)} blocks"
+            f"{args.file}: {total} blocks × {m.labels_per_block} labels for {m.name}; {verb} {count_labels(data)} blocks"
+            f" to {pr.name if pr else target}"
         )
+        if args.dry_run:
+            if offset != (0.0, 0.0):
+                print(f"registration {offset[0]:+.3f},{offset[1]:+.3f} in would go in front as ^R / ~Q")
+            print("dry run — nothing sent")
+            return 0
         if args.status:
             st = status(target)
             print(f"printer status: {st or 'no reply'} (00 = ready)")

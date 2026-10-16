@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.2 — 2026-10-16
+
+- `print --dry-run`: every guard (media match, blocks inside the print areas, the label selection, heat, the
+  printer's registration) and the summary line, then nothing is sent — the check `printcart` already had, for one
+  file. Asked for on the floor when a `print … --dry-run` was refused as an unknown argument.
+
 ## 0.11.1 — 2026-10-15
 
 - The preview follows the form: every change to the composer re-renders the shown row after a short pause
