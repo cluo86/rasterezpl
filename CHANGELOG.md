@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0 — 2026-10-16
+
+- `print --proof F.pdf|F.png`: the proof of EVERY web row as it would be sent (after `--labels` / `--first`), one
+  PDF page per row at true scale (the page carries the media's dpi — print it on paper at 100 % and lay it over the
+  real label) or the rows stacked in one PNG. With `--dry-run` it is the preview of a print that never happens;
+  without, the record of one that did. `proof_document(media, data, out)` in `rasterezpl.proof`.
+
 ## 0.11.2 — 2026-10-16
 
 - `print --dry-run`: every guard (media match, blocks inside the print areas, the label selection, heat, the

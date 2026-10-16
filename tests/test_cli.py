@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import io
+import re
+
 import pytest
 
 import rasterezpl as rz
+from rasterezpl import jobs as rj
 from rasterezpl.cli import main
+from rasterezpl.registry import load
 
 PIL = pytest.importorskip("PIL")
 
@@ -72,6 +77,23 @@ def test_registry_text_print_decode(tmp_path, capsys):
         "would send 1 blocks to filep" in out and "dry run — nothing sent" in out and "+0.100,-0.020" in out
     )
     assert not target.exists()
+    # --proof with the dry run: one PDF page per web row of what would be sent (0.12.0), at the media's dpi
+    pdf = tmp_path / "proof.pdf"
+    args = ["--registry", str(reg), "print", str(job), "--printer", "filep", "--dry-run", "--proof", str(pdf)]
+    assert main(args) == 0
+    assert "proof: " in capsys.readouterr().out and not target.exists()
+    raw = pdf.read_bytes()
+    assert (
+        raw.startswith(b"%PDF") and len(re.findall(rb"/Type\s*/Page\b(?!s)", raw)) == 2
+    )  # 2 blocks → 2 pages
+    sheet = tmp_path / "proof.png"
+    assert main(args[:-1] + [str(sheet), "--labels", "2"]) == 0
+    from PIL import Image
+
+    with Image.open(sheet) as im:  # one selected label → one web row → one row in the sheet
+        assert im.size[1] == Image.open(io.BytesIO(rj.proof_png(tmp_path, load(reg), "job.ezpl"))).size[1]
+    with pytest.raises(SystemExit):
+        main(args[:-1] + [str(tmp_path / "proof.txt")])
     # print via the registry printer: the offset goes in front, the media guard passes
     assert main(["--registry", str(reg), "print", str(job), "--printer", "filep", "--labels", "2"]) == 0
     spool = target.read_bytes()

@@ -53,6 +53,7 @@ printers:
 ```
 rasterezpl print job.ezpl --printer tdp43me --labels 1-2 --status
 rasterezpl print job.ezpl --printer tdp43me --dry-run         # the guards + the summary, nothing sent
+rasterezpl print job.ezpl --printer tdp43me --dry-run --proof job.pdf   # + every web row as a true-scale PDF page
 ```
 
 ## Faded print

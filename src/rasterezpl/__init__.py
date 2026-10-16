@@ -1,6 +1,6 @@
 """rasterezpl — print any bitmap to Godex-language (EZPL) label printers, driverless, from macOS or Linux."""
 
-__version__ = "0.11.2"
+__version__ = "0.12.0"
 
 from .calibrate import ruler_job, ruler_page
 from .compose import Spec, compose, import_pemx, parse_rows, parse_text
@@ -12,7 +12,7 @@ from .presets import (
     PANDUIT_S150X225VATY_2UP_FULL,
     PRESETS,
 )
-from .proof import proof_image
+from .proof import proof_document, proof_image
 from .server import make_server, serve
 from .stream import (
     STRIP_ROWS,
@@ -79,6 +79,7 @@ __all__ = [
     "parse_selection",
     "parse_text",
     "pattern_blocks",
+    "proof_document",
     "proof_image",
     "pt_to_px",
     "render_text",

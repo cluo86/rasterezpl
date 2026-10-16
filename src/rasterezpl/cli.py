@@ -6,7 +6,7 @@ rasterezpl usb                           USB printer-class devices on the bus
 rasterezpl status  --printer P | --to T  ~S,CHECK (00 = ready)
 rasterezpl text    --media M --font F --pt 5.4 "l1\\nl2" … | --rows F.csv [--template T] -o job.ezpl   text labels → job
 rasterezpl image   --media M a.png b.png … -o job.ezpl                     bitmaps → job (one per area)
-rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status] [--dry-run]
+rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status] [--dry-run] [--proof F.pdf|F.png]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
 rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run]              several files, one plan, one print
@@ -123,6 +123,11 @@ def _parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="every guard and the summary (media match, blocks inside the areas, selection, heat, offset), send nothing",
+    )
+    q.add_argument(
+        "--proof",
+        help="also write the proof of every web row as it would be sent (after --labels/--first): .pdf = one page "
+        "per row at true scale (print it on paper at 100 %% to lay over the real label), .png = the rows stacked",
     )
     q.add_argument(
         "--darkness", type=int, help="^H 0–19 for this print (default: the printer record's, else the file's)"
@@ -367,6 +372,18 @@ def main(argv: list[str] | None = None) -> int:
             f"{args.file}: {total} blocks × {m.labels_per_block} labels for {m.name}; {verb} {count_labels(data)} blocks"
             f" to {pr.name if pr else target}"
         )
+        if args.proof:
+            from .proof import proof_document
+
+            try:
+                n = proof_document(
+                    m, data, args.proof, caption=f"{Path(args.file).name} → {pr.name if pr else target}"
+                )
+            except ValueError as e:
+                sys.exit(str(e))
+            print(
+                f"proof: {args.proof} ({n} web rows, {m.dpi} dpi — the print, row by row, without the registration shift)"
+            )
         if args.dry_run:
             if offset != (0.0, 0.0):
                 print(f"registration {offset[0]:+.3f},{offset[1]:+.3f} in would go in front as ^R / ~Q")

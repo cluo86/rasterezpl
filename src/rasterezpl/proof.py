@@ -5,6 +5,7 @@ Nothing here is a stand-in: the bitmap is the decoded job page, so what the proo
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from .media import Media
 
@@ -69,3 +70,45 @@ def proof_image(m: Media, page, overlay: Callable | None = None, caption: str = 
     )
     d.text((ox, oy + h + 6), text, fill=(80, 80, 80), font=font)
     return img
+
+
+def proof_document(m: Media, data: bytes, out, caption: str = "") -> int:
+    """Every web row of a job as ONE file: `.pdf` = one page per row at TRUE SCALE (the page carries the media's
+    dpi, so a paper print at 100 % lays over the real label, scales and all); `.png` = the rows stacked. `data`
+    is the job exactly as it would be sent (after any label selection), so the document is the print, row by row.
+    Returns the row count."""
+    from PIL import Image
+
+    from .stream import decode_block, parse_blocks
+
+    blocks = parse_blocks(data)
+    if not blocks:
+        raise ValueError("the job has no label blocks")
+    pages = [
+        proof_image(
+            m,
+            decode_block(qs, m),
+            caption=f"{caption + ' — ' if caption else ''}web row {i} of {len(blocks)} ({m.name}, {m.dpi} dpi)",
+        )
+        for i, (_n, qs) in enumerate(blocks, start=1)
+    ]
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.suffix.lower() == ".pdf":
+        pages[0].save(
+            out,
+            format="PDF",
+            save_all=True,
+            append_images=pages[1:],
+            resolution=m.dpi,
+            title=caption or out.stem,
+        )
+    elif out.suffix.lower() == ".png":
+        w, h = pages[0].size
+        sheet = Image.new("RGB", (w, h * len(pages)), "white")
+        for i, pg in enumerate(pages):
+            sheet.paste(pg, (0, i * h))
+        sheet.save(out, format="PNG", dpi=(m.dpi, m.dpi))
+    else:
+        raise ValueError(f"{out.name}: the proof document is .pdf (one page per row) or .png (rows stacked)")
+    return len(pages)
