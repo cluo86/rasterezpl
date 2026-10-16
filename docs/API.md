@@ -102,17 +102,24 @@ written before 0.13.0 / 0.14.0 lack the newer keys.
           {"file": "c/d.ezpl"}]}
 ```
 `labels` is a print-dialog selection (`1`, `1-2`, `1,3,5-6`; 1-based); omitted = the whole file. `printer`
-omitted = the one registry printer holding the file's media (two candidates → refused: choose one).
+omitted = the one registry printer holding the file's media (two candidates → refused: choose one). `bookends`
+and `settle` may be given as for print: they set each row's `wait_s`.
 ```json
 {"plan": [{"file": "a/b.ezpl", "labels": "1-4,7", "count": 5, "total": 64, "printer": "tdp43me",
-           "media": "panduit-s150x225vaty-2up", "refused": null}]}
+           "media": "panduit-s150x225vaty-2up", "refused": null, "rows": 3, "wait_s": 15.0,
+           "sent": null, "error": null}]}
 ```
+`rows` = the web rows the selection sends; `wait_s` = the wait after this file before the next (the printer
+record's `settle`: `per_row_s × rows (+2 with bookends) + floor_s`, rounded up; the `settle` override for every
+row; `null` = the printer's status is polled). `sent` / `error` are filled by print.
 
 ### `POST /api/print`
 Same body as plan, plus `"dry_run": true` to stop after the plan, `"bookends": true` to put a START block
-before and an END block after EVERY file's labels, in that file's send (off by default), and `"settle": 180`
-— seconds to wait between two files asking the printer nothing (default 0 = poll its status until `00`; a
-printer without status gets no wait).
+before and an END block after EVERY file's labels, in that file's send (off by default), and `"settle"` —
+seconds to wait between two files asking the printer nothing, `0` = no wait; omitted or `null` = the printer
+record's `settle` scaled to the rows just sent (see the README, *Long jobs on an Ethernet board*), else its
+status polled until `00` (a printer without status gets no wait). The wait counts from the moment the previous
+send returned.
 ```json
 {"plan": [...], "notes": ["a/b.ezpl labels 1-4,7 → sent … over USB", "settled 180 s before the next job (no status query)", "…"],
  "sent": true, "bookends": false}

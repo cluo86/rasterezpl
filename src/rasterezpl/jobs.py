@@ -59,6 +59,8 @@ class PlanRow:
     printer: str | None
     media: str | None
     refused: str | None
+    rows: int = 0  # web rows (label blocks) the selection sends — a partly selected row counts
+    wait_s: float | None = None  # the wait after this file before the next (set_waits): None = status poll
     sent: bool | None = None  # after run(): True = delivered, False = the send failed, None = not attempted
     error: str | None = None  # the failed send's message
 
@@ -214,6 +216,7 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
             row.refused = str(e)
             continue
         row.count = len(picked)
+        row.rows = len({(k - 1) // m.labels_per_block for k in picked})
         if not picked:
             row.refused = "no label selected"
             continue
@@ -227,23 +230,55 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
     return rows
 
 
-def wait_policy(settle: float = 0.0) -> str:
+def secs(v: float) -> str:
+    """Seconds for a note: whole when whole, else one decimal (180, 2.5, 109)."""
+    return f"{v:.1f}".rstrip("0").rstrip(".")
+
+
+def set_waits(
+    reg: Registry, rows: list[PlanRow], bookends: bool = False, settle: float | None = None
+) -> None:
+    """Fill each clean row's ``wait_s`` — the wait after that file before the next one. ``settle`` given = that
+    many seconds for every row (0 = no wait at all); else the printer record's ``settle`` scaled to the web rows
+    just sent (bookends included: two more); else None = poll the printer's status (the 0.14.0 behaviour)."""
+    for r in rows:
+        if not r.ok:
+            continue
+        if settle is not None:
+            r.wait_s = float(settle)
+            continue
+        pr = reg.printers.get(r.printer or "")
+        r.wait_s = pr.settle_for(r.rows + (2 if bookends else 0)) if pr else None
+
+
+def wait_policy(rows: list[PlanRow], settle: float | None = None) -> str:
     """What happens between two files of a cart, as the plan states it."""
-    if settle > 0:
-        return f"between files: settle {settle:g} s, no status query"
+    if settle is not None:
+        return (
+            f"between files: settle {secs(settle)} s, no status query"
+            if settle > 0
+            else "between files: no wait (--settle 0)"
+        )
+    if any(r.ok and r.wait_s is not None for r in rows):
+        return (
+            "between files: the printer record's settle, scaled to the rows just sent (then wait … s above)"
+        )
     return "between files: poll the printer's status until it answers 00 (--settle N waits N s instead; no status = no wait)"
 
 
-def format_plan(rows: list[PlanRow], bookends: bool = False, settle: float = 0.0) -> str:
+def format_plan(rows: list[PlanRow], bookends: bool = False, settle: float | None = None) -> str:
     """The plan as a text table with a totals line (the CLI's output). ``count`` stays the real labels; with
-    ``bookends`` every clean row shows the START / END pair it will carry; with two or more clean rows the wait
-    between files (:func:`wait_policy`) is stated."""
+    ``bookends`` every clean row shows the START / END pair it will carry; with two or more clean rows each file
+    but the last shows its wait (``wait_s``, see :func:`set_waits`) and the policy (:func:`wait_policy`) is
+    stated."""
     w = max([len(r.file) for r in rows] + [4])
     lines = [f"{'file':{w}s} {'labels':>7s}  {'printer':10s} labels"]
+    ok = [r for r in rows if r.ok]
     for r in rows:
         state = f"REFUSED: {r.refused}" if r.refused else r.labels + (" +2 bookends" if bookends else "")
+        if r.ok and r.wait_s is not None:  # what the printer needs after this file before the next job
+            state += f" — then wait {secs(r.wait_s)} s" if r.wait_s > 0 else " — then no wait"
         lines.append(f"{r.file:{w}s} {r.count:7d}  {r.printer or '-':10s} {state}")
-    ok = [r for r in rows if r.ok]
     by_p: dict[str, int] = {}
     for r in ok:
         by_p[r.printer or ""] = by_p.get(r.printer or "", 0) + r.count
@@ -254,7 +289,7 @@ def format_plan(rows: list[PlanRow], bookends: bool = False, settle: float = 0.0
         + (f"; {len(rows) - len(ok)} file(s) refused" if len(ok) < len(rows) else "")
     )
     if len(ok) > 1:
-        lines.append(wait_policy(settle))
+        lines.append(wait_policy(rows, settle))
     return "\n".join(lines)
 
 
@@ -345,27 +380,41 @@ def run(
     dry_run: bool = False,
     to: str | None = None,
     bookends: bool = False,
-    settle: float = 0.0,
+    settle: float | None = None,
 ) -> list[str]:
     """Send every row of a clean plan — nothing while any row is refused. One note per row; EVERY send, success
     or failure, is appended to ``log`` as a JSON line (:func:`append_log`). ``to`` overrides the transport for
     every row (a tcp://, lp: or file path — a test spool); the printer's media and offset still apply.
     ``bookends`` puts a START block before and an END block after every row's labels, in the same write
     (:mod:`rasterezpl.bookends`); ``count`` stays the labels. Between two rows the printer is waited for
-    (:func:`rasterezpl.transport.wait_idle`: ``settle`` seconds, or its status until 00). A failed send stops
-    the cart: the rows after it are not sent, and the note says so."""
+    (:func:`set_waits`: ``settle`` seconds for every row, else the printer record's settle scaled to the rows
+    just sent, else its status until 00 — :func:`rasterezpl.transport.wait_idle`), counted from the moment the
+    previous send returned. A failed send stops the cart: the rows after it are not sent, and the note says so."""
     if dry_run:
         return ["dry run — " + ("+2 bookends per file, " if bookends else "") + "nothing sent"]
     if any(r.refused for r in rows):
         return ["REFUSED rows in the plan — nothing sent (fix the cart and run again)"]
+    set_waits(reg, rows, bookends, settle)
     notes = []
+    t_returned = time.monotonic()
     for i, r in enumerate(rows):
         pr = reg.printers[r.printer or ""]
         m = reg.media[r.media or pr.media_name]
         target = to or pr.transport
         if i:
+            prev = rows[i - 1]
             try:
-                notes.append(wait_idle(target, settle))
+                if prev.wait_s is None:
+                    notes.append(wait_idle(target))
+                elif prev.wait_s <= 0:
+                    notes.append("no wait before the next job (settle 0)")
+                else:
+                    left = prev.wait_s - (time.monotonic() - t_returned)
+                    notes.append(
+                        wait_idle(target, left)
+                        if left > 0
+                        else f"the {secs(prev.wait_s)} s wait after {prev.file} had already passed"
+                    )
             except RuntimeError as e:
                 notes.append(f"FAILED: {e}; {len(rows) - i} file(s) not sent")
                 r.sent, r.error = False, str(e)
@@ -387,6 +436,7 @@ def run(
             darkness=pr.darkness,
             speed=pr.speed,
         )
+        t_returned = time.monotonic()
         r.sent = ok
         notes.append(f"{r.file} labels {r.labels}{' +2 bookends' if bookends else ''} → {note}")
         if not ok:

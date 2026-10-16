@@ -39,7 +39,7 @@ from .compose import (
     probe_rows,
     read_spec,
 )
-from .jobs import LOG_NAME, holds, list_files, plan, proof_png, read_log, run
+from .jobs import LOG_NAME, holds, list_files, plan, proof_png, read_log, run, set_waits
 from .registry import Registry, load
 
 ENDPOINTS: list[tuple[str, str, str]] = [
@@ -63,12 +63,18 @@ ENDPOINTS: list[tuple[str, str, str]] = [
         "the composed jobs, newest first: name, labels, media, layout, input (a recipe list)",
     ),
     ("GET", "/api/log?n=50", "the last n print-log entries"),
-    ("POST", "/api/plan", '{"jobs":[{"file","labels"?,"printer"?}]} → the plan, nothing sent'),
+    (
+        "POST",
+        "/api/plan",
+        '{"jobs":[{"file","labels"?,"printer"?}],"bookends"?,"settle"?} → the plan (rows, wait_s per file), '
+        "nothing sent",
+    ),
     (
         "POST",
         "/api/print",
         '{"jobs":[…],"dry_run"?,"bookends"?,"settle"?} → plan + one job per file (bookends: a START and an END '
-        "label around every file's labels, same send; settle: seconds between files instead of a status poll); "
+        "label around every file's labels, same send; settle: seconds between files, 0 = none; default the "
+        "printer record's settle scaled to the rows sent, else a status poll); "
         "409 while any row is refused, 500 when a send fails (logged, the cart stops)",
     ),
     ("POST", "/api/compose", 'a Spec (+ "preview": true for the PNG of row 1) → composed/<name>-<hash>.ezpl'),
@@ -272,11 +278,12 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(jobs, list) or not jobs:
                     return self._json({"error": "jobs: a non-empty list of {file, labels, printer?}"}, 400)
                 rows = plan(self.root, self.reg, jobs)
+                bookends = bool(doc.get("bookends"))
+                settle = None if doc.get("settle") in (None, "") else float(doc["settle"])
+                set_waits(self.reg, rows, bookends, settle)
                 if path == "/api/plan":
                     return self._json({"plan": [asdict(r) for r in rows]})
                 dry = bool(doc.get("dry_run"))
-                bookends = bool(doc.get("bookends"))
-                settle = float(doc.get("settle") or 0)
                 refused = any(r.refused for r in rows)
                 with self.lock:  # one job at a time on the bus
                     notes = run(

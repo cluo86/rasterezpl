@@ -85,11 +85,27 @@ of ~1.2 MB each:
   connection the printer closes BEFORE any byte was accepted is retried — nothing is on the paper. One closed
   after bytes were accepted is never retried: those labels are on the paper, and a resend would print them
   twice. The error and the log name `host:port` and the bytes accepted; the operator reads the roll for the last
-  label printed and resumes with `--labels N-M`. Between two files of a cart the printer is waited for:
-  `--settle 180` waits that long and asks the printer nothing (recommended on the NetPS board — a 66-row job
-  prints in about that long; a status query is itself a connection); without it the printer's `~S,CHECK` is
-  polled until it answers `00`, and a printer whose status is unavailable gets no wait — the plan states which
-  wait is in force.
+  label printed and resumes with `--labels N-M`.
+- **The wait between two files scales with the job (0.15.0).** Measured on the NetPS board: two 66-row jobs with
+  bookends had their END label on the roll within ~90 s of the send returning — about 1.3 s per web row; a
+  one-row job is done in seconds. The printer record says what its board needs:
+
+  ```yaml
+  printers:
+    tdp43me:
+      transport: tcp://192.168.8.136:9100
+      media: panduit-s150x225vaty-2up
+      settle:
+        per_row_s: 1.5     # seconds per web row the printer still prints after a send returns
+        floor_s: 10        # the least wait
+  ```
+
+  `printcart` then waits `per_row_s × web rows just sent (bookends included) + floor_s`, rounded up, counted
+  from the moment the send returned, and asks the printer nothing meanwhile (a status query is itself a
+  connection); the plan prints each file's wait (`then wait 109 s` for 66 rows). `--settle SECONDS` overrides
+  it for every file, `--settle 0` disables any wait, and a printer with neither polls `~S,CHECK` until it
+  answers `00` (no status = no wait). A single `print` never waits. The page shows the computed wait and takes
+  the override; the API takes `"settle"`.
 - **Every send is logged**, success or failure — `print`, `printcart` and `POST /api/print` alike — with `ok`,
   `bytes_sent` and `error`; `print` logs beside the job file (`--log` elsewhere). Before 0.14.0 only `printcart`
   logged, and a day's single prints had no record but the terminal.
@@ -178,8 +194,9 @@ rasterezpl printcart a.ezpl b.ezpl c.ezpl --bookends                      # a ST
 `--bookends` on a cart marks every file: each send is START, that file's labels, END (see `print --bookends`);
 the plan shows `+2 bookends` on each row and keeps `count` as the labels. The page has the same as a checkbox
 beside *print*, off by default, and the API takes `"bookends": true`; the print log marks each entry.
-`--settle SECONDS` is the wait between two files with no status query (see *Long jobs on an Ethernet board*);
-a failed send stops the cart, is logged, and the exit code is 1.
+`--settle SECONDS` overrides the wait between two files (see *Long jobs on an Ethernet board* — by default the
+printer record's `settle` scaled to the rows just sent, else a status poll; `0` = no wait); a failed send stops
+the cart, is logged, and the exit code is 1.
 
 ### Your own labels
 

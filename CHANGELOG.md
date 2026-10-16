@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.0 — 2026-10-16
+
+- The wait between two cart files scales with the job. A flat `--settle` idled three minutes between two one-label
+  files and barely covered a 66-row one; measured on the TDP43ME NetPS board, a 66-row job with bookends has its
+  END on the roll ~90 s after the send returns (~1.3 s per web row). A printer record may now carry
+  `settle: {per_row_s, floor_s}`; `printcart` (and `POST /api/print`, the page) waits `per_row_s × web rows just
+  sent (+2 with bookends) + floor_s`, rounded up, counted from the moment the send returned, with no status
+  query; the plan prints each file's wait (`then wait 109 s`). `--settle SECONDS` / `"settle"` overrides it
+  for every file, `0` disables any wait, and a printer without the record polls its status as in 0.14.0. The
+  plan rows carry `rows` and `wait_s`. A single `print` never waits. Older YAML without `settle` is unchanged.
+
 ## 0.14.0 — 2026-10-16
 
 - Sends that survive an Ethernet board. On the TDP43ME's NetPS board a cart's second file, sent the instant the

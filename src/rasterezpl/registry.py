@@ -30,6 +30,7 @@ Location: ``--registry PATH``, else ``$RASTEREZPL_PRINTERS``, else ``~/.config/r
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +53,17 @@ class Printer:
     note: str = ""
     darkness: int | None = None  # ^H 0–19 applied at send time to every job (this head prints light / dark)
     speed: int | None = None  # ^S ips applied at send time (slower = more heat per dot)
+    # `settle:` — how long the printer keeps printing after a send RETURNS: an Ethernet board accepts a job into
+    # its buffer and prints it afterwards (NetPS on a TDP43ME, 2026-10-16: ~1.3 s per web row, so per_row_s 1.5,
+    # floor_s 10). The wait before the next cart file = per_row_s × web rows just sent + floor_s. None = unknown.
+    settle_per_row_s: float | None = None
+    settle_floor_s: float = 0.0
+
+    def settle_for(self, rows: int) -> float | None:
+        """Seconds to wait after a send of ``rows`` web rows, or None when the record does not say."""
+        if self.settle_per_row_s is None:
+            return None
+        return float(math.ceil(self.settle_per_row_s * rows + self.settle_floor_s))  # whole seconds, up
 
 
 @dataclass(frozen=True)
@@ -107,6 +119,11 @@ def load(explicit: str | None = None) -> Registry:
         if mname not in media:
             raise ValueError(f"printer {name}: media {mname!r} is neither a preset nor defined in {path}")
         off = d.get("offset_in") or [0.0, 0.0]
+        st = d.get("settle") or {}
+        if not isinstance(st, dict) or set(st) - {"per_row_s", "floor_s"}:
+            raise ValueError(
+                f"printer {name}: settle is a block with per_row_s and floor_s (seconds), got {st!r}"
+            )
         printers[name] = Printer(
             name=name,
             transport=str(d["transport"]),
@@ -116,5 +133,7 @@ def load(explicit: str | None = None) -> Registry:
             note=str(d.get("note", "")),
             darkness=None if d.get("darkness") is None else int(d["darkness"]),
             speed=None if d.get("speed") is None else int(d["speed"]),
+            settle_per_row_s=None if st.get("per_row_s") is None else float(st["per_row_s"]),
+            settle_floor_s=float(st.get("floor_s") or 0.0),
         )
     return Registry(path, media, printers)

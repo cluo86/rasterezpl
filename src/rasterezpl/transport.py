@@ -366,7 +366,8 @@ def wait_idle(target: str, settle: float = 0.0, deadline_s: float = 900.0) -> st
     A printer whose status is unavailable or silent gets no wait at all — the note says so. Returns the note."""
     if settle > 0:
         time.sleep(settle)
-        return f"settled {settle:g} s before the next job (no status query)"
+        shown = f"{settle:.1f}".rstrip("0").rstrip(".")
+        return f"settled {shown} s before the next job (no status query)"
     t_end = time.monotonic() + deadline_s
     k = 0
     while True:

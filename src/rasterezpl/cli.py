@@ -24,7 +24,7 @@ from pathlib import Path
 from . import __version__
 from .calibrate import ruler_job
 from .compose import Spec, render
-from .jobs import LOG_NAME, format_plan, parse_cart, plan, run, send_logged
+from .jobs import LOG_NAME, format_plan, parse_cart, plan, run, send_logged, set_waits
 from .media import Media
 from .registry import Registry, load
 from .stream import (
@@ -212,11 +212,12 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument(
         "--settle",
         type=float,
-        default=0.0,
+        default=None,
         metavar="SECONDS",
         help="wait this long between two files and ask the printer nothing (an Ethernet board resets a "
-        "connection opened while it still prints the previous job from its buffer — 180 for the NetPS board); "
-        "default 0 = poll the printer's status until it answers 00, no wait when it has none",
+        "connection opened while it still prints the previous job from its buffer); 0 = no wait at all; "
+        "default: the printer record's `settle` (per_row_s × web rows just sent + floor_s), else poll the "
+        "printer's status until it answers 00, no wait when it has none",
     )
     q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
     return p
@@ -274,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
             rows = plan(root, reg, parse_cart(args.entry))
         except ValueError as e:
             sys.exit(str(e))
+        set_waits(reg, rows, args.bookends, args.settle)
         print(format_plan(rows, bookends=args.bookends, settle=args.settle))
         log = Path(args.log).expanduser() if args.log else root / LOG_NAME
         for note in run(

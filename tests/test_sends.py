@@ -287,7 +287,8 @@ def test_settle_is_honoured_between_two_cart_files(site, monkeypatch):
     assert "between files: poll the printer's status until it answers 00" in format_plan(rows)
     assert "between files" not in format_plan(rows[:1], settle=180)  # one file: nothing to wait between
     notes = run(root, reg, rows, root / LOG_NAME, settle=180)
-    assert slept == [180.0] and notes[1] == "settled 180 s before the next job (no status query)"
+    assert slept == [pytest.approx(180.0, abs=0.5)]  # counted from the moment the first send returned
+    assert notes[1] == "settled 180 s before the next job (no status query)"
     assert len(notes) == 3 and site["t1"].exists() and site["t2"].exists()
     # settle 0 = the status poll; a file spool answers 00 at once, so no sleep
     slept.clear()
@@ -324,7 +325,7 @@ def test_cli_printcart_settle_and_exit_code(site, capsys, monkeypatch):
     assert "between files: settle 2.5 s, no status query" in out and slept == []
     assert main(argv) == 0
     out = capsys.readouterr().out
-    assert slept == [2.5] and "settled 2.5 s before the next job" in out
+    assert slept == [pytest.approx(2.5, abs=0.5)] and "settled 2.5 s before the next job" in out
     entries = [json.loads(ln) for ln in (site["root"] / LOG_NAME).read_text().splitlines()]
     assert [(e["labels"], e["ok"], e["bytes_sent"] > 0) for e in entries] == [
         ("1-2", True, True),
