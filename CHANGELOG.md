@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.13.0 — 2026-10-16
+
+- `--bookends` on `print` and `printcart`, `"bookends": true` on `POST /api/print`, a checkbox on the page (all
+  off by default — nothing existing changes a byte): a START block before and an END block after every file's
+  labels, in the SAME send. The roll itself now shows where a job begins and that it completed — the crew held
+  the last label of a 128-label job on the roll and asked whether it had finished, and nothing on the paper
+  could answer; four more jobs followed on the same roll. The marks are black with hazard-striped edges (no
+  cable label looks like that), the word in the largest bold face that fits; START carries the file, `labels
+  97-128 of 128`, the count, the printer and the time; END a CUT HERE band, `32/32 sent` and what a missing
+  END means. Built on the job's own setup after the selection (never selectable, never counted), they pass the
+  same guards, take the printer's heat like the labels, show as the first and last page of `--proof`, and the
+  print log gains `"bookends"`. `rasterezpl.bookends`: `bookend_image`, `bookend_blocks`, `with_bookends`.
+
+## 0.12.1 — 2026-10-16
+
+- TCP sends stream in chunks with a stall deadline, like USB: one `sendall` of a 128-label job timed out on the
+  TDP43ME NetPS board after part of the job was in the printer; the error names the bytes sent.
+
 ## 0.12.0 — 2026-10-16
 
 - `print --proof F.pdf|F.png`: the proof of EVERY web row as it would be sent (after `--labels` / `--first`), one

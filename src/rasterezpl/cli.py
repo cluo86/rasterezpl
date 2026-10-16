@@ -135,6 +135,13 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument(
         "--speed", type=int, help="^S ips for this print (default: the printer record's, else the file's)"
     )
+    q.add_argument(
+        "--bookends",
+        action="store_true",
+        help="a START label before and an END label after the job, in the same send (black, hazard-striped, "
+        "the job's name, labels and time; the END carries a CUT HERE band) — the paper then shows where the job "
+        "begins and that it completed; two blocks, never counted as labels, never selectable",
+    )
 
     q = sub.add_parser("ruler", help="print the calibration ruler (optionally over a job's first label)")
     q.add_argument("file", nargs="?")
@@ -191,6 +198,11 @@ def _parser() -> argparse.ArgumentParser:
         help="the DIRECTORY the entries are relative to (default: the current one)",
     )
     q.add_argument("--dry-run", action="store_true", help="the plan only, send nothing")
+    q.add_argument(
+        "--bookends",
+        action="store_true",
+        help="a START and an END label around EVERY file's labels, in that file's send (see print --bookends)",
+    )
     q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
     return p
 
@@ -247,9 +259,9 @@ def main(argv: list[str] | None = None) -> int:
             rows = plan(root, reg, parse_cart(args.entry))
         except ValueError as e:
             sys.exit(str(e))
-        print(format_plan(rows))
+        print(format_plan(rows, bookends=args.bookends))
         log = Path(args.log).expanduser() if args.log else root / LOG_NAME
-        for note in run(root, reg, rows, log, dry_run=args.dry_run):
+        for note in run(root, reg, rows, log, dry_run=args.dry_run, bookends=args.bookends):
             print(note)
         return 0 if all(r.ok for r in rows) else 2
 
@@ -357,6 +369,17 @@ def main(argv: list[str] | None = None) -> int:
             data = select_labels(data, args.labels, m)
         elif args.first:
             data = first_labels(data, args.first)
+        n_labels = count_labels(data) * m.labels_per_block
+        if args.bookends:  # after the selection, before the heat: never selectable, retuned like the labels
+            from .bookends import with_bookends
+
+            spec = args.labels or (f"1-{n_labels}" if n_labels > 1 else "1")  # --first / whole file = a range
+            try:
+                data = with_bookends(
+                    m, data, args.file, spec, total * m.labels_per_block, n_labels, pr.name if pr else target
+                )
+            except ValueError as e:
+                sys.exit(str(e))
         if args.offset:
             ox, oy = (float(v) for v in args.offset.split(","))
             offset = (ox, oy)
@@ -370,7 +393,8 @@ def main(argv: list[str] | None = None) -> int:
         verb = "would send" if args.dry_run else "sending"
         print(
             f"{args.file}: {total} blocks × {m.labels_per_block} labels for {m.name}; {verb} {count_labels(data)} blocks"
-            f" to {pr.name if pr else target}"
+            + (f" ({count_labels(data) - 2} + 2 bookends per file)" if args.bookends else "")
+            + f" to {pr.name if pr else target}"
         )
         if args.proof:
             from .proof import proof_document

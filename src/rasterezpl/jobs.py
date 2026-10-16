@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .media import Media
 from .registry import Registry
 from .stream import (
     blocks_outside_areas,
@@ -224,12 +225,13 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
     return rows
 
 
-def format_plan(rows: list[PlanRow]) -> str:
-    """The plan as a text table with a totals line (the CLI's output)."""
+def format_plan(rows: list[PlanRow], bookends: bool = False) -> str:
+    """The plan as a text table with a totals line (the CLI's output). ``count`` stays the real labels; with
+    ``bookends`` every clean row shows the START / END pair it will carry."""
     w = max([len(r.file) for r in rows] + [4])
     lines = [f"{'file':{w}s} {'labels':>7s}  {'printer':10s} labels"]
     for r in rows:
-        state = f"REFUSED: {r.refused}" if r.refused else r.labels
+        state = f"REFUSED: {r.refused}" if r.refused else r.labels + (" +2 bookends" if bookends else "")
         lines.append(f"{r.file:{w}s} {r.count:7d}  {r.printer or '-':10s} {state}")
     ok = [r for r in rows if r.ok]
     by_p: dict[str, int] = {}
@@ -238,9 +240,18 @@ def format_plan(rows: list[PlanRow]) -> str:
     lines.append(
         f"{sum(r.count for r in ok)} labels in {len(ok)} files → "
         + (", ".join(f"{n} on {p}" for p, n in by_p.items()) or "nothing to send")
+        + (" (+2 bookends per file)" if bookends and ok else "")
         + (f"; {len(rows) - len(ok)} file(s) refused" if len(ok) < len(rows) else "")
     )
     return "\n".join(lines)
+
+
+def bookended(m: Media, data: bytes, row: PlanRow, pr, ts: str | None = None) -> bytes:
+    """A planned row's job stream (after its selection) with its START / END bookends around it — see
+    :mod:`rasterezpl.bookends`. ``ts`` defaults to now, the print log's clock."""
+    from .bookends import with_bookends
+
+    return with_bookends(m, data, row.file, row.labels, row.total, row.count, pr.name, ts)
 
 
 def run(
@@ -250,21 +261,24 @@ def run(
     log: Path | None,
     dry_run: bool = False,
     to: str | None = None,
+    bookends: bool = False,
 ) -> list[str]:
     """Send every row of a clean plan — nothing while any row is refused. One note per row; every real send is
-    appended to ``log`` as a JSON line (ts, file, labels, count, printer, transport, note). ``to`` overrides the
-    transport for every row (a tcp://, lp: or file path — a test spool); the printer's media and offset still
-    apply."""
+    appended to ``log`` as a JSON line (ts, file, labels, count, printer, transport, note, bookends). ``to``
+    overrides the transport for every row (a tcp://, lp: or file path — a test spool); the printer's media and
+    offset still apply. ``bookends`` puts a START block before and an END block after every row's labels, in
+    the same write (:mod:`rasterezpl.bookends`); ``count`` stays the labels."""
     if dry_run:
-        return ["dry run — nothing sent"]
+        return ["dry run — " + ("+2 bookends per file, " if bookends else "") + "nothing sent"]
     if any(r.refused for r in rows):
         return ["REFUSED rows in the plan — nothing sent (fix the cart and run again)"]
     notes = []
     for r in rows:
         pr = reg.printers[r.printer or ""]
-        data = select_labels(
-            confine(root, r.file).read_bytes(), r.labels, reg.media[r.media or pr.media_name]
-        )
+        m = reg.media[r.media or pr.media_name]
+        data = select_labels(confine(root, r.file).read_bytes(), r.labels, m)
+        if bookends:
+            data = bookended(m, data, r, pr)
         heat = pr.darkness is not None or pr.speed is not None
         if heat:
             data = retune(data, pr.darkness, pr.speed)
@@ -274,7 +288,7 @@ def run(
             dk = pr.darkness if pr.darkness is not None else "file"
             sp = pr.speed if pr.speed is not None else "file"
             note += f" (darkness {dk}, speed {sp})"
-        notes.append(f"{r.file} labels {r.labels} → {note}")
+        notes.append(f"{r.file} labels {r.labels}{' +2 bookends' if bookends else ''} → {note}")
         if log is not None:
             entry = {
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -284,6 +298,7 @@ def run(
                 "printer": pr.name,
                 "transport": target,
                 "note": note,
+                "bookends": bookends,
             }
             with log.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry, ensure_ascii=False) + "\n")

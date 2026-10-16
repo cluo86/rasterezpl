@@ -54,7 +54,18 @@ printers:
 rasterezpl print job.ezpl --printer tdp43me --labels 1-2 --status
 rasterezpl print job.ezpl --printer tdp43me --dry-run         # the guards + the summary, nothing sent
 rasterezpl print job.ezpl --printer tdp43me --dry-run --proof job.pdf   # + every web row as a true-scale PDF page
+rasterezpl print job.ezpl --printer tdp43me --labels 97-128 --bookends  # + a START label before, an END label after
 ```
+
+`--bookends` puts the job's own start and end marks on the paper: a START block before the labels and an END
+block after them, in the same send. A crew tearing strips off a roll of hundreds cannot tell from the paper where
+one job ends or whether it completed — the last label looks like every other, and the only record was the print
+log on the Mac. The marks are black with hazard-striped edges, a look no cable label carries; START says which
+file, which labels of how many (`labels 97-128 of 128` on a resume), the count, the printer and the time; END
+carries a CUT HERE band and `32/32 sent` — a missing END label means the job was cut. They ride in the job's own
+stream, after the selection and before the heat: never selectable, never counted as labels, retuned like them,
+and an END label in the hand is proof the whole stream arrived. Two blocks per job (a two-across web spends two
+labels per mark); off unless asked for. `--proof` shows them as the first and last page.
 
 ## Faded print
 
@@ -120,7 +131,9 @@ rasterezpl serve --root ~/labels --open     # → http://127.0.0.1:8123/rasterez
 The browser is the GUI; the `serve` process holds the printers. It lists every `.ezpl` under the root with
 the media it was written for and the printers that hold that media, shows the proof of any label, and takes a
 cart of files and label ranges to ONE print: the plan (file, labels, count, printer, refusal) is shown first,
-a refused row stops the whole cart, and every send is appended to `<root>/.rasterezpl-printlog.jsonl`.
+a refused row stops the whole cart, and every send is appended to `<root>/.rasterezpl-printlog.jsonl`. A
+*bookends* checkbox (off by default) puts a START and an END label around every file's labels, in that file's
+send, so the roll itself shows where each job begins and that it completed.
 
 The same guards as `rasterezpl print`: a file goes only to a printer holding its media, and only if every block
 lies inside that media's print areas. Paths are confined to the root. It binds `127.0.0.1` — a printer is a
@@ -132,7 +145,12 @@ Your own page beside the job files can drive it, same origin — `GET /api/` lis
 ```
 rasterezpl printcart a/b.ezpl:1-4,7 c/d.ezpl --root ~/labels --dry-run   # the plan; drop --dry-run to send
 rasterezpl printcart composed/labels-3835b428.ezpl --dry-run             # from the served root itself
+rasterezpl printcart a.ezpl b.ezpl c.ezpl --bookends                      # a START and an END around EVERY file
 ```
+
+`--bookends` on a cart marks every file: each send is START, that file's labels, END (see `print --bookends`);
+the plan shows `+2 bookends` on each row and keeps `count` as the labels. The page has the same as a checkbox
+beside *print*, off by default, and the API takes `"bookends": true`; the print log marks each entry.
 
 ### Your own labels
 

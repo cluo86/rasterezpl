@@ -1,7 +1,8 @@
 """rasterezpl — print any bitmap to Godex-language (EZPL) label printers, driverless, from macOS or Linux."""
 
-__version__ = "0.12.1"
+__version__ = "0.13.0"
 
+from .bookends import bookend_blocks, bookend_image, with_bookends
 from .calibrate import ruler_job, ruler_page
 from .compose import Spec, compose, import_pemx, parse_rows, parse_text
 from .jobs import PlanRow, format_plan, list_files, plan, run
@@ -54,6 +55,8 @@ __all__ = [
     "Spec",
     "UsbPrinter",
     "bitmap_rows",
+    "bookend_blocks",
+    "bookend_image",
     "compose",
     "blocks_outside_areas",
     "count_labels",
@@ -96,4 +99,5 @@ __all__ = [
     "status_tcp",
     "status_usb",
     "tightest",
+    "with_bookends",
 ]

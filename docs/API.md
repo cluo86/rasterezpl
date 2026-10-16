@@ -85,7 +85,10 @@ included; the picture is not kept).
 ### `GET /api/log?n=50`
 The last `n` print-log entries, oldest first:
 `[{"ts": "2026-09-30T12:07:01", "file": "…", "labels": "1-4", "count": 4, "printer": "tdp43me",
-  "transport": "usb:0123ABCD", "note": "sent 23787 bytes (2 labels) to Panduit TDP43ME over USB"}]`
+  "transport": "usb:0123ABCD", "note": "sent 23787 bytes (2 labels) to Panduit TDP43ME over USB",
+  "bookends": false}]`
+`count` is the labels; `bookends` says whether a START and an END block went around them (0.13.0; entries written
+before carry no such key).
 
 ## POST endpoints
 
@@ -102,12 +105,20 @@ omitted = the one registry printer holding the file's media (two candidates → 
 ```
 
 ### `POST /api/print`
-Same body as plan, plus `"dry_run": true` to stop after the plan.
+Same body as plan, plus `"dry_run": true` to stop after the plan, and `"bookends": true` to put a START block
+before and an END block after EVERY file's labels, in that file's send (off by default).
 ```json
-{"plan": [...], "notes": ["a/b.ezpl labels 1-4,7 → sent … over USB"], "sent": true}
+{"plan": [...], "notes": ["a/b.ezpl labels 1-4,7 → sent … over USB"], "sent": true, "bookends": false}
 ```
 `sent` is false (and the status 409) while any row is refused: nothing goes to any printer until the cart is
-clean. With `dry_run` the status is 200 and `notes` is `["dry run — nothing sent"]`.
+clean. With `dry_run` the status is 200 and `notes` is `["dry run — nothing sent"]` (with bookends:
+`["dry run — +2 bookends per file, nothing sent"]`).
+
+Bookends are the job's own start and end marks on the paper: black, hazard-striped, START naming the file, the
+labels of how many (`labels 97-128 of 128`), the count, the printer and the time; END with a CUT HERE band and
+`32/32 sent`. They are built on the job's media after the label selection (never selectable, never in `count`),
+pass the same guards, take the printer's darkness / speed like the labels, and travel in the same write — an END
+label in the hand is proof the stream arrived. Two blocks per file; a media too small for the mark refuses (400).
 
 ### `POST /api/compose`
 A Spec, in one of three input forms:
