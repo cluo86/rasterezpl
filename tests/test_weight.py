@@ -97,7 +97,7 @@ def test_printer_heat_applied_at_send_time(tmp_path, capsys):
     (root / "t.ezpl").write_bytes(rz.job(r.media["flags"], [[None]]))
     assert b"^S3\r^H14\r" in (root / "t.ezpl").read_bytes()
     notes = run(root, r, plan(root, r, [{"file": "t.ezpl"}]), root / "log.jsonl")
-    assert "darkness 17, speed 2" in notes[0]
+    assert "darkness 17, speed 2" in notes[1]  # the stream's send note (notes[0] describes it)
     sent = spool.read_bytes()
     assert b"^S2\r^H17\r" in sent and b"^H14" not in sent
     assert b"^S3\r^H14\r" in (root / "t.ezpl").read_bytes()  # the file is untouched

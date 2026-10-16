@@ -30,7 +30,6 @@ Location: ``--registry PATH``, else ``$RASTEREZPL_PRINTERS``, else ``~/.config/r
 
 from __future__ import annotations
 
-import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,17 +52,10 @@ class Printer:
     note: str = ""
     darkness: int | None = None  # ^H 0–19 applied at send time to every job (this head prints light / dark)
     speed: int | None = None  # ^S ips applied at send time (slower = more heat per dot)
-    # `settle:` — how long the printer keeps printing after a send RETURNS: an Ethernet board accepts a job into
-    # its buffer and prints it afterwards (NetPS on a TDP43ME, 2026-10-16: ~1.3 s per web row, so per_row_s 1.5,
-    # floor_s 10). The wait before the next cart file = per_row_s × web rows just sent + floor_s. None = unknown.
+    # `settle:` (0.15.0, per_row_s / floor_s) is read for an old YAML's sake and IGNORED since 0.16.0: a cart is
+    # one stream per printer, with no gap between files to wait for.
     settle_per_row_s: float | None = None
     settle_floor_s: float = 0.0
-
-    def settle_for(self, rows: int) -> float | None:
-        """Seconds to wait after a send of ``rows`` web rows, or None when the record does not say."""
-        if self.settle_per_row_s is None:
-            return None
-        return float(math.ceil(self.settle_per_row_s * rows + self.settle_floor_s))  # whole seconds, up
 
 
 @dataclass(frozen=True)

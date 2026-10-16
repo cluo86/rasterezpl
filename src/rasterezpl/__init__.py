@@ -1,11 +1,22 @@
 """rasterezpl — print any bitmap to Godex-language (EZPL) label printers, driverless, from macOS or Linux."""
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 from .bookends import bookend_blocks, bookend_image, with_bookends
 from .calibrate import ruler_job, ruler_page
 from .compose import Spec, compose, import_pemx, parse_rows, parse_text
-from .jobs import PlanRow, append_log, format_plan, list_files, plan, run, send_logged, set_waits
+from .jobs import (
+    Part,
+    PlanRow,
+    Stream,
+    append_log,
+    compose_streams,
+    format_plan,
+    list_files,
+    plan,
+    run,
+    send_logged,
+)
 from .media import EOL, LEFT_MARGIN_MAX_DOTS, OFFSET_MAX_DOTS, Media, offset_commands, setup_commands
 from .presets import (
     PANDUIT_S150X225VATY_2UP,
@@ -61,7 +72,9 @@ __all__ = [
     "PANDUIT_S150X225VATY_2UP_FULL",
     "PRESETS",
     "Media",
+    "Part",
     "PlanRow",
+    "Stream",
     "SendError",
     "Spec",
     "UsbPrinter",
@@ -70,6 +83,7 @@ __all__ = [
     "bookend_blocks",
     "bookend_image",
     "compose",
+    "compose_streams",
     "blocks_outside_areas",
     "count_labels",
     "decode_block",
@@ -107,7 +121,6 @@ __all__ = [
     "select_labels",
     "send",
     "send_logged",
-    "set_waits",
     "serialise_block",
     "setup_commands",
     "status",

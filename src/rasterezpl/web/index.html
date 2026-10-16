@@ -95,20 +95,19 @@ function renderFiles() {
 function addToCart(i) { const f = FILES[i]; CART.push({file: f.file, labels: $("sel-" + i).value.trim(), printer: $("pr-" + i).value || undefined}); saveCart(); renderCart(); }
 function rmCart(i) { CART.splice(i, 1); saveCart(); renderCart(); }
 function clearCart() { CART = []; saveCart(); renderCart(); }
-function waitText(r, i, rows) { if (r.refused || i === rows.length - 1 || rows.length < 2) return ""; if (r.wait_s === null || r.wait_s === undefined) return " — then poll the printer's status"; return r.wait_s > 0 ? ` — then wait ${Math.round(r.wait_s)} s` : " — then no wait"; }
-function planTable(rows) { return `<table><tr><th>file</th><th>labels</th><th>count</th><th>printer</th><th>state</th></tr>${rows.map((r, i) => `<tr><td><code>${esc(r.file)}</code></td><td>${esc(r.labels)}</td><td>${r.count}/${r.total} <span class="muted">(${r.rows} rows)</span></td><td>${esc(r.printer || "-")}</td><td class="${r.refused ? "bad" : "ok"}">${esc(r.refused || "ok")}${esc(waitText(r, i, rows))}</td></tr>`).join("")}</table>`; }
-function settleValue() { const v = $("settle").value.trim(); return v === "" ? null : (parseFloat(v) || 0); }
+function planTable(rows) { return `<table><tr><th>file</th><th>labels</th><th>count</th><th>printer</th><th>state</th></tr>${rows.map(r => `<tr><td><code>${esc(r.file)}</code></td><td>${esc(r.labels)}</td><td>${r.count}/${r.total} <span class="muted">(${r.rows} rows)</span></td><td>${esc(r.printer || "-")}</td><td class="${r.refused || r.sent === false ? "bad" : "ok"}">${esc(r.refused || r.error || (r.stream ? `sent in stream ${r.stream.id} (bytes ${r.stream.offset}–${r.stream.offset + r.stream.length})` : "ok"))}</td></tr>`).join("")}</table>`; }
 function renderCart() {
   PLAN = null;
   if (!CART.length) { $("cart").innerHTML = "<b>cart</b> <span class=\"muted\">empty — compose labels or add files below</span>"; return; }
   $("cart").innerHTML = `<b>cart</b> ${CART.length} job(s) <button class="rm" onclick="clearCart()">clear</button><table>${CART.map((c, i) => `<tr><td><code>${esc(c.file)}</code></td><td>labels ${esc(c.labels || "all")}</td><td>${esc(c.printer || "auto")}</td><td><button class="rm" onclick="rmCart(${i})">remove</button></td></tr>`).join("")}</table>
-  <button class="big" onclick="doPlan()">plan (nothing sent)</button> <button class="big" id="printbtn" disabled onclick="doPrint()">print</button> <label title="a black, hazard-striped START label before and an END label (with a CUT HERE band) after every file's labels, in the same send — the paper shows where a job begins and that it completed; two extra labels per file, never counted"><input type="checkbox" id="bookends"> bookends (START / END labels per file)</label> <label title="seconds to wait between two files, asking the printer nothing — an Ethernet board resets a connection opened while it still prints the previous job; empty = the printer record's settle scaled to the rows just sent (else a status poll), 0 = no wait">settle <input type="text" id="settle" size="3" value="" placeholder="auto"> s between files</label><div id="plan"></div><div id="note"></div>`;
+  <button class="big" onclick="doPlan()">plan (nothing sent)</button> <button class="big" id="printbtn" disabled onclick="doPrint()">print</button> <label title="a black, hazard-striped START label before and an END label (with a CUT HERE band) after every file's labels, in the same send — the paper shows where a job begins and that it completed; two extra labels per file, never counted"><input type="checkbox" id="bookends"> bookends (START / END labels per file)</label><div id="plan"></div><div id="note"></div>`;
 }
 async function doPlan() {
   try {
-    const j = await api("/api/plan", {jobs: CART, bookends: $("bookends").checked, settle: settleValue()}); PLAN = j.plan;
+    const j = await api("/api/plan", {jobs: CART}); PLAN = j.plan;
     const ok = !PLAN.some(r => r.refused), n = PLAN.reduce((a, r) => a + r.count, 0), be = $("bookends").checked;
-    $("plan").innerHTML = planTable(PLAN) + `<div class="${ok ? "ok" : "bad"}">${ok ? `${n} labels ready${be ? ` (+2 bookends per file, ${PLAN.length} file${PLAN.length === 1 ? "" : "s"})` : ""} — press print` : "fix the refused rows"}</div>`;
+    const printers = [...new Set(PLAN.filter(r => !r.refused).map(r => r.printer))];
+    $("plan").innerHTML = planTable(PLAN) + `<div class="${ok ? "ok" : "bad"}">${ok ? `${n} labels ready${be ? ` (+2 bookends per file, ${PLAN.length} file${PLAN.length === 1 ? "" : "s"})` : ""} — one stream per printer (${printers.join(", ")}), the files back to back — press print` : "fix the refused rows"}</div>`;
     $("printbtn").disabled = !ok; $("printbtn").textContent = ok ? `print ${n} labels${be ? " + bookends" : ""}` : "print";
   } catch (e) { $("plan").innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
 }
@@ -116,8 +115,9 @@ async function doPrint() {
   if (!PLAN) return;
   $("printbtn").disabled = true; $("note").textContent = "sending…";
   try {
-    const j = await api("/api/print", {jobs: CART, bookends: $("bookends").checked, settle: settleValue()});
+    const j = await api("/api/print", {jobs: CART, bookends: $("bookends").checked});
     $("note").innerHTML = `<pre>${esc(j.notes.join("\n"))}</pre>`;
+    if (j.plan) $("plan").innerHTML = planTable(j.plan);
     if (j.sent) { CART = []; saveCart(); loadLog(); setTimeout(renderCart, 4000); }
   } catch (e) { $("note").textContent = e.message; $("note").className = "bad"; }
 }

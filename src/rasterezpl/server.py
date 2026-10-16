@@ -39,7 +39,7 @@ from .compose import (
     probe_rows,
     read_spec,
 )
-from .jobs import LOG_NAME, holds, list_files, plan, proof_png, read_log, run, set_waits
+from .jobs import LOG_NAME, holds, list_files, plan, proof_png, read_log, run
 from .registry import Registry, load
 
 ENDPOINTS: list[tuple[str, str, str]] = [
@@ -66,16 +66,14 @@ ENDPOINTS: list[tuple[str, str, str]] = [
     (
         "POST",
         "/api/plan",
-        '{"jobs":[{"file","labels"?,"printer"?}],"bookends"?,"settle"?} → the plan (rows, wait_s per file), '
-        "nothing sent",
+        '{"jobs":[{"file","labels"?,"printer"?}]} → the plan (one row per file), nothing sent',
     ),
     (
         "POST",
         "/api/print",
-        '{"jobs":[…],"dry_run"?,"bookends"?,"settle"?} → plan + one job per file (bookends: a START and an END '
-        "label around every file's labels, same send; settle: seconds between files, 0 = none; default the "
-        "printer record's settle scaled to the rows sent, else a status poll); "
-        "409 while any row is refused, 500 when a send fails (logged, the cart stops)",
+        '{"jobs":[…],"dry_run"?,"bookends"?} → plan + ONE stream per printer, the files back to back (bookends: '
+        "a START and an END label around every file's labels); 409 while any row is refused, 500 when a stream "
+        "is cut (every file logged with its verdict)",
     ),
     ("POST", "/api/compose", 'a Spec (+ "preview": true for the PNG of row 1) → composed/<name>-<hash>.ezpl'),
     ("POST", "/api/import", '{"pemx": <base64>} → an Easy-Mark project\'s texts, point size, part'),
@@ -279,22 +277,12 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json({"error": "jobs: a non-empty list of {file, labels, printer?}"}, 400)
                 rows = plan(self.root, self.reg, jobs)
                 bookends = bool(doc.get("bookends"))
-                settle = None if doc.get("settle") in (None, "") else float(doc["settle"])
-                set_waits(self.reg, rows, bookends, settle)
                 if path == "/api/plan":
                     return self._json({"plan": [asdict(r) for r in rows]})
                 dry = bool(doc.get("dry_run"))
                 refused = any(r.refused for r in rows)
-                with self.lock:  # one job at a time on the bus
-                    notes = run(
-                        self.root,
-                        self.reg,
-                        rows,
-                        self.log_path,
-                        dry_run=dry,
-                        bookends=bookends,
-                        settle=settle,
-                    )
+                with self.lock:  # one stream at a time on the bus
+                    notes = run(self.root, self.reg, rows, self.log_path, dry_run=dry, bookends=bookends)
                 failed = [r for r in rows if r.sent is False]
                 sent = not dry and not refused and not failed
                 body = {"plan": [asdict(r) for r in rows], "notes": notes, "sent": sent, "bookends": bookends}

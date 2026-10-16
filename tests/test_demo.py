@@ -39,7 +39,7 @@ def test_demo_root_and_pipeline(tmp_path, capsys):
         root, reg, plan(root, reg, [{"file": "patterns/stripes.ezpl", "labels": "1"}]), root / "log.jsonl"
     )
     spool = root / "spool" / "demo-panduit.ezpl"
-    assert spool.exists() and "1 labels" in notes[0]
+    assert spool.exists() and "(1 labels)" in notes[1]
     assert (
         spool.read_bytes().startswith(b"^R3\r") and rz.count_labels(spool.read_bytes()) == 1
     )  # 0.01 in × 300 dpi

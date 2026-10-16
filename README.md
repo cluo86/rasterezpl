@@ -75,40 +75,31 @@ of ~1.2 MB each:
 - **Accepted is not printed.** The board takes a 1.2 MB job in 35 s to 2 min and prints it from its buffer over
   the following minutes. "sent 1,273,901 bytes" means the board has it, not that the roll does. The END label of
   `--bookends` on the roll is the physical idle gate: a job is done when its END is in your hand.
-- **One connection at a time.** A connection opened while the board still prints the previous job is reset — the
-  send dies with a broken pipe after some bytes, the roll shows that job's START and nothing behind it — and the
-  reset can wedge port 9100 until the board restarts its print server on its own (~90 s of refused connections
-  while ping and the web UI answer; its `/status.htm` says *Restart Server is ongoing*). Four single jobs, each
-  started after the crew saw the previous END, went through cleanly.
-- **What rasterezpl does about it (0.14.0).** Before every job the port is waited on: refused, timed out, or
-  closed at once by the board = not ready, retried with backoff for up to 900 s, never a failed job. A
-  connection the printer closes BEFORE any byte was accepted is retried — nothing is on the paper. One closed
-  after bytes were accepted is never retried: those labels are on the paper, and a resend would print them
-  twice. The error and the log name `host:port` and the bytes accepted; the operator reads the roll for the last
-  label printed and resumes with `--labels N-M`.
-- **The wait between two files scales with the job (0.15.0).** Measured on the NetPS board: two 66-row jobs with
-  bookends had their END label on the roll within ~90 s of the send returning — about 1.3 s per web row; a
-  one-row job is done in seconds. The printer record says what its board needs:
-
-  ```yaml
-  printers:
-    tdp43me:
-      transport: tcp://192.168.8.136:9100
-      media: panduit-s150x225vaty-2up
-      settle:
-        per_row_s: 1.5     # seconds per web row the printer still prints after a send returns
-        floor_s: 10        # the least wait
-  ```
-
-  `printcart` then waits `per_row_s × web rows just sent (bookends included) + floor_s`, rounded up, counted
-  from the moment the send returned, and asks the printer nothing meanwhile (a status query is itself a
-  connection); the plan prints each file's wait (`then wait 109 s` for 66 rows). `--settle SECONDS` overrides
-  it for every file, `--settle 0` disables any wait, and a printer with neither polls `~S,CHECK` until it
-  answers `00` (no status = no wait). A single `print` never waits. The page shows the computed wait and takes
-  the override; the API takes `"settle"`.
+- **One connection at a time.** A NEW connection opened while the board still prints the previous job is reset —
+  the send dies with a broken pipe after some bytes, the roll shows that job's START and nothing behind it — and
+  the reset can wedge port 9100 until the board restarts its print server on its own (~90 s of refused
+  connections while ping and the web UI answer; its `/status.htm` says *Restart Server is ongoing*). INSIDE one
+  connection there is no such moment: the board takes bytes as its buffer drains, TCP blocks the sender, and the
+  chunked send rides the stall — a 1.27 MB job took ~2 min this way and never failed.
+- **So a cart is ONE stream per printer (0.16.0).** `printcart` composes, for each printer, one job: the
+  registration prefix once, the darkness / speed retuned once in front, then every file in cart order — its START
+  mark, its selected blocks, its END mark when `--bookends` is on — and sends it over one connection. No gap
+  between files, nothing to wait for, no second connection to be reset. Each file is logged with its place in
+  the stream (`stream: {id, offset, length}`), so the paper, the files and the bytes line up: with bookends,
+  the START and END of each file are on the roll in order.
+- **Before the stream's connection** the port is waited on: refused, timed out, or closed at once by the board =
+  not ready, retried with backoff for up to 900 s, never a failed job. A connection the printer closes BEFORE any
+  byte was accepted is retried — nothing is on the paper. One closed after bytes were accepted is never retried:
+  those labels are on the paper, and a resend would print them twice.
+- **A cut stream is reported file by file.** The files wholly before the cut are logged ok; the file in flight is
+  logged `ok: false` with the web row the cut fell in (`cut inside labels-mtp-B31 at web row 12 of 66`) and the
+  command prints the resume range (`--labels 23-132`) — the operator's call from what the roll shows; the files
+  after it are logged as not sent. Nothing is ever resent on its own.
 - **Every send is logged**, success or failure — `print`, `printcart` and `POST /api/print` alike — with `ok`,
   `bytes_sent` and `error`; `print` logs beside the job file (`--log` elsewhere). Before 0.14.0 only `printcart`
   logged, and a day's single prints had no record but the terminal.
+- A printer record's `settle` block (0.15.0) is read for an old YAML's sake and ignored with a note: there is no
+  gap between files to wait for any more.
 
 ## Faded print
 
@@ -188,15 +179,15 @@ Your own page beside the job files can drive it, same origin — `GET /api/` lis
 ```
 rasterezpl printcart a/b.ezpl:1-4,7 c/d.ezpl --root ~/labels --dry-run   # the plan; drop --dry-run to send
 rasterezpl printcart composed/labels-3835b428.ezpl --dry-run             # from the served root itself
-rasterezpl printcart a.ezpl b.ezpl c.ezpl --bookends                      # a START and an END around EVERY file
+rasterezpl printcart a.ezpl b.ezpl c.ezpl --bookends                      # ONE stream: START a END START b END START c END
 ```
 
-`--bookends` on a cart marks every file: each send is START, that file's labels, END (see `print --bookends`);
-the plan shows `+2 bookends` on each row and keeps `count` as the labels. The page has the same as a checkbox
-beside *print*, off by default, and the API takes `"bookends": true`; the print log marks each entry.
-`--settle SECONDS` overrides the wait between two files (see *Long jobs on an Ethernet board* — by default the
-printer record's `settle` scaled to the rows just sent, else a status poll; `0` = no wait); a failed send stops
-the cart, is logged, and the exit code is 1.
+A cart is ONE stream per printer: the files go back to back over one connection, in cart order (see *Long jobs
+on an Ethernet board*). `--bookends` marks every file inside the stream: START, that file's labels, END (see
+`print --bookends`); the plan shows `+2 bookends` on each row and keeps `count` as the labels. The page has
+the same as a checkbox beside *print*, off by default, and the API takes `"bookends": true`; the print log
+marks each entry. `--proof F.pdf|F.png` writes the composed stream as a proof (one document per printer). A cut
+stream is logged file by file, the exit code is 1, and nothing is resent.
 
 ### Your own labels
 

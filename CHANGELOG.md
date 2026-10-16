@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.16.0 — 2026-10-16
+
+- `printcart` sends ONE stream per printer. The NetPS board resets a NEW connection opened while it still
+  prints the previous job; inside one connection there is no such moment — the board takes bytes as its buffer
+  drains, TCP blocks the sender, and the chunked send (0.12.1) rides the stall (B29's 1.27 MB took ~2 min that
+  way and never failed). So the cart's files for a printer go back to back in one job: the registration prefix
+  once, the darkness / speed retuned once in front, then each file in cart order — START, its selected blocks,
+  END with `--bookends`. One send per printer; `--dry-run` describes each stream (files, blocks, bookends,
+  bytes); `printcart --proof F.pdf|F.png` proofs the composed stream (one document per printer).
+- The log gains `stream: {id, offset, length}` per file so the paper, the files and the bytes line up. A cut
+  stream is reported file by file: the files before the cut `ok: true`, the one in flight `ok: false` with
+  `error: "cut inside F at web row N of M"` (the block holding the first byte the printer did not take) and the
+  resume range printed (`--labels N-M`, the operator's call), the files after it `not sent`. Nothing is resent.
+- Removed: `--settle` / `"settle"` and the status poll between files (0.14.0 / 0.15.0) — there is no gap between
+  files any more. A printer record's `settle` block is read for an old YAML's sake and ignored with a note. The
+  ready-wait before a stream's connection stays. A single `print` and a one-file cart are byte-identical to
+  0.14.0 (pinned).
+
 ## 0.15.0 — 2026-10-16
 
 - The wait between two cart files scales with the job. A flat `--settle` idled three minutes between two one-label

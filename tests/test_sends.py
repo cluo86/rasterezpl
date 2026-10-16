@@ -14,11 +14,11 @@ import pytest
 import rasterezpl as rz
 from rasterezpl import transport
 from rasterezpl.cli import main
-from rasterezpl.jobs import LOG_NAME, format_plan, plan, run, send_logged
+from rasterezpl.jobs import LOG_NAME, plan, run, send_logged
 from rasterezpl.media import offset_commands
 from rasterezpl.registry import load
 from rasterezpl.stream import select_labels
-from rasterezpl.transport import TCP_CHUNK, SendError, send_tcp, wait_idle
+from rasterezpl.transport import TCP_CHUNK, SendError, send_tcp
 
 PIL = pytest.importorskip("PIL")
 
@@ -90,7 +90,7 @@ def test_connection_closed_after_k_bytes_names_the_bytes_and_logs_them(tmp_path)
         )  # RST, not FIN
 
     srv, port = _port_server(close_after_k)
-    data = b"x" * (TCP_CHUNK * 8)
+    data = b"x" * (TCP_CHUNK * 128)  # 8 MB: beyond any loopback socket buffer, so the cut is seen
     with pytest.raises(SendError) as ei:
         send_tcp(data, "127.0.0.1", port, timeout_s=2.0, deadline_s=5.0, ready_s=1.0)
     e = ei.value
@@ -272,65 +272,6 @@ def test_print_writes_a_log_line_beside_the_job(site, capsys):
         and "error" in e
         and e["note"].startswith("FAILED — nothing on the paper")
     )
-
-
-def test_settle_is_honoured_between_two_cart_files(site, monkeypatch):
-    root, reg = site["root"], site["reg"]
-    slept: list[float] = []
-    monkeypatch.setattr(transport.time, "sleep", lambda s: slept.append(s))
-    rows = plan(
-        root,
-        reg,
-        [{"file": "a.ezpl", "printer": "filep"}, {"file": "a.ezpl", "labels": "1", "printer": "filep2"}],
-    )
-    assert "between files: settle 180 s, no status query" in format_plan(rows, settle=180)
-    assert "between files: poll the printer's status until it answers 00" in format_plan(rows)
-    assert "between files" not in format_plan(rows[:1], settle=180)  # one file: nothing to wait between
-    notes = run(root, reg, rows, root / LOG_NAME, settle=180)
-    assert slept == [pytest.approx(180.0, abs=0.5)]  # counted from the moment the first send returned
-    assert notes[1] == "settled 180 s before the next job (no status query)"
-    assert len(notes) == 3 and site["t1"].exists() and site["t2"].exists()
-    # settle 0 = the status poll; a file spool answers 00 at once, so no sleep
-    slept.clear()
-    notes = run(root, reg, rows, root / LOG_NAME)
-    assert slept == [] and notes[1] == "printer ready (00 file spool (writable))"
-    # an unavailable status = no wait, said so; a status that never says 00 = a RuntimeError at the deadline
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    dead = probe.getsockname()[1]
-    probe.close()
-    assert wait_idle(f"tcp://127.0.0.1:{dead}").startswith("status unavailable (ConnectionRefusedError")
-    with pytest.raises(RuntimeError, match="still busy after 0 s"):
-        wait_idle(str(root / "nodir" / "x.ezpl"), deadline_s=0)
-
-
-def test_cli_printcart_settle_and_exit_code(site, capsys, monkeypatch):
-    slept: list[float] = []
-    monkeypatch.setattr(transport.time, "sleep", lambda s: slept.append(s))
-    reg1 = site["regpath"].with_name("one.yaml")
-    reg1.write_text(REG.split("  filep2:")[0].format(t1=site["t1"], t2=""))
-    argv = [
-        "--registry",
-        str(reg1),
-        "printcart",
-        "--root",
-        str(site["root"]),
-        "--settle",
-        "2.5",
-        "a.ezpl:1-2",
-        "a.ezpl:3-4",
-    ]
-    assert main([*argv, "--dry-run"]) == 0
-    out = capsys.readouterr().out
-    assert "between files: settle 2.5 s, no status query" in out and slept == []
-    assert main(argv) == 0
-    out = capsys.readouterr().out
-    assert slept == [pytest.approx(2.5, abs=0.5)] and "settled 2.5 s before the next job" in out
-    entries = [json.loads(ln) for ln in (site["root"] / LOG_NAME).read_text().splitlines()]
-    assert [(e["labels"], e["ok"], e["bytes_sent"] > 0) for e in entries] == [
-        ("1-2", True, True),
-        ("3-4", True, True),
-    ]
 
 
 def test_without_new_options_the_bytes_are_identical_to_0_13_0(site):

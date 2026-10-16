@@ -116,15 +116,19 @@ def test_run_sends_n_plus_2_in_order_and_logs_the_flag(site):
     rows = plan(root, reg, [{"file": "a.ezpl", "labels": "3-6", "printer": "p1"}])
     assert rows[0].ok and rows[0].count == 4 and rows[0].total == 6
     txt = format_plan(rows, bookends=True)
-    assert "3-6 +2 bookends" in txt and "4 labels in 1 files → 4 on p1 (+2 bookends per file)" in txt
+    assert (
+        "3-6 +2 bookends" in txt
+        and "4 labels in 1 files → 4 on p1 (1 file, one stream) (+2 bookends per file)" in txt
+    )
     assert "+2" not in format_plan(rows)
     log = root / LOG_NAME
-    assert run(root, reg, rows, log, dry_run=True, bookends=True) == [
-        "dry run — +2 bookends per file, nothing sent"
-    ]
+    dry = run(root, reg, rows, log, dry_run=True, bookends=True)
+    assert len(dry) == 2 and " → p1: 1 file, 4 blocks (2 bookends), " in dry[0]
+    assert dry[1] == "dry run — +2 bookends per file, nothing sent"
     assert not site["t"][0].exists() and not log.exists()
     notes = run(root, reg, rows, log, bookends=True)
-    assert notes[0].startswith("a.ezpl labels 3-6 +2 bookends → wrote")
+    assert notes[1].startswith("stream ") and " → p1: wrote " in notes[1]
+    assert notes[2].startswith("a.ezpl labels 3-6 +2 bookends → sent in stream ")
     spool = site["t"][0].read_bytes()
     m = reg.media["big"]
     assert spool.startswith(b"^R10\r~Q-2\r")
@@ -153,7 +157,7 @@ def test_without_the_flag_the_stream_is_byte_identical_to_0_12_1(site):
     expected = offset_commands(m, (0.1, -0.02)) + select_labels((root / "a.ezpl").read_bytes(), "1-3", m)
     assert site["t"][0].read_bytes() == expected
     assert json.loads(log.read_text().splitlines()[-1])["bookends"] is False
-    assert run(root, reg, rows, log, dry_run=True) == ["dry run — nothing sent"]
+    assert run(root, reg, rows, log, dry_run=True)[-1] == "dry run — nothing sent"
     site["t"][0].unlink()
     argv = [
         "--registry",
@@ -235,18 +239,22 @@ def test_cli_printcart_two_files_two_pairs(site, capsys):
     argv = ["--registry", str(reg1), "printcart", "--root", str(root), "--bookends"]
     assert main([*argv, "--dry-run", "a.ezpl:1-4", "b.ezpl"]) == 0
     out = capsys.readouterr().out
-    assert out.count("1-4 +2 bookends") == 2 and "8 labels in 2 files → 8 on p1 (+2 bookends per file)" in out
+    assert out.count("1-4 +2 bookends") == 2
+    assert "8 labels in 2 files → 8 on p1 (2 files, one stream) (+2 bookends per file)" in out
+    assert "2 files, 8 blocks (4 bookends)" in out
     assert "dry run — +2 bookends per file, nothing sent" in out and not site["t"][0].exists()
-    # two files → two sends, each START … END; the file spool keeps the last, the log both
+    # two files → ONE stream: START a END START b END, the log one line per file in that stream
     assert main([*argv, "a.ezpl:1-4", "b.ezpl"]) == 0
     m = site["reg"].media["big"]
-    last = parse_blocks(site["t"][0].read_bytes())
-    assert len(last) == 4 and _ink(last[0], m) > 0.25 and _ink(last[-1], m) > 0.2  # b.ezpl: 2 rows + 2
+    blocks = parse_blocks(site["t"][0].read_bytes())
+    assert len(blocks) == 8 and [round(_ink(b, m) > 0.2) for b in blocks] == [1, 0, 0, 1, 1, 0, 0, 1]
     entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text().splitlines()]
-    assert [(e["file"], e["count"], e["bookends"]) for e in entries] == [
-        ("a.ezpl", 4, True),
-        ("b.ezpl", 4, True),
+    assert [(e["file"], e["count"], e["bookends"], e["ok"]) for e in entries] == [
+        ("a.ezpl", 4, True, True),
+        ("b.ezpl", 4, True, True),
     ]
+    assert entries[0]["stream"]["id"] == entries[1]["stream"]["id"]
+    assert entries[1]["stream"]["offset"] == entries[0]["stream"]["offset"] + entries[0]["stream"]["length"]
 
 
 def test_api_print_takes_bookends(site):
@@ -273,7 +281,7 @@ def test_api_print_takes_bookends(site):
         jobs = [{"file": "a.ezpl", "labels": "1-2", "printer": "p1"}]
         st, j = post({"jobs": jobs, "dry_run": True, "bookends": True})
         assert st == 200 and j["sent"] is False and j["bookends"] is True
-        assert j["notes"] == ["dry run — +2 bookends per file, nothing sent"] and not site["t"][0].exists()
+        assert j["notes"][-1] == "dry run — +2 bookends per file, nothing sent" and not site["t"][0].exists()
         st, j = post({"jobs": jobs, "bookends": True})
         assert st == 200 and j["sent"] is True and j["bookends"] is True and j["plan"][0]["count"] == 2
         assert rz.count_labels(site["t"][0].read_bytes()) == 3  # one label row + START + END

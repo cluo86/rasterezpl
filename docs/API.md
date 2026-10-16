@@ -85,14 +85,17 @@ included; the picture is not kept).
 ### `GET /api/log?n=50`
 The last `n` print-log entries, oldest first:
 `[{"ts": "2026-09-30T12:07:01", "file": "…", "labels": "1-4", "count": 4, "printer": "tdp43me",
-  "transport": "usb:0123ABCD", "note": "sent 23787 bytes (2 labels) to Panduit TDP43ME over USB",
-  "bookends": false, "ok": true, "bytes_sent": 23787}]`
+  "transport": "usb:0123ABCD", "note": "sent in stream 3f2a9c1e (bytes 10–23797)",
+  "bookends": false, "ok": true, "bytes_sent": 23787, "stream": {"id": "3f2a9c1e", "offset": 10, "length": 23787}}]`
 `count` is the labels; `bookends` says whether a START and an END block went around them (0.13.0). Since 0.14.0
-EVERY send is logged, success or failure — from `print`, `printcart` and this API — with `ok`, `bytes_sent` (what
-the printer accepted; with the registration prefix) and, on a failure, `error` (the message) and a `note` that
-says whether anything is on the paper: `FAILED — nothing on the paper (0 bytes accepted)` or `FAILED after N
-bytes — labels ARE on the paper up to where the stream stopped`. The keys of older lines are unchanged; lines
-written before 0.13.0 / 0.14.0 lack the newer keys.
+EVERY send is logged, success or failure — from `print`, `printcart` and this API — with `ok`, `bytes_sent` (the
+bytes of THIS file the printer accepted) and, on a failure, `error` and a `note` saying what is on the paper.
+Since 0.16.0 a cart's files share one stream per printer and each line carries `stream`: `id` (one per stream),
+`offset` (the file's first byte in the stream as sent, registration prefix counted) and `length`; a cut stream
+logs the files before the cut `ok: true`, the one in flight `ok: false` with `error: "cut inside F at web row
+N of M"` and `note: "CUT — labels ARE on the paper up to the cut (…)"`, the files after `ok: false`, `note:
+"not sent"`. A single `print` logs without `stream`. The keys of older lines are unchanged; lines written before
+0.13.0 / 0.14.0 / 0.16.0 lack the newer keys.
 
 ## POST endpoints
 
@@ -102,44 +105,38 @@ written before 0.13.0 / 0.14.0 lack the newer keys.
           {"file": "c/d.ezpl"}]}
 ```
 `labels` is a print-dialog selection (`1`, `1-2`, `1,3,5-6`; 1-based); omitted = the whole file. `printer`
-omitted = the one registry printer holding the file's media (two candidates → refused: choose one). `bookends`
-and `settle` may be given as for print: they set each row's `wait_s`.
+omitted = the one registry printer holding the file's media (two candidates → refused: choose one).
 ```json
 {"plan": [{"file": "a/b.ezpl", "labels": "1-4,7", "count": 5, "total": 64, "printer": "tdp43me",
-           "media": "panduit-s150x225vaty-2up", "refused": null, "rows": 3, "wait_s": 15.0,
-           "sent": null, "error": null}]}
+           "media": "panduit-s150x225vaty-2up", "refused": null, "rows": 3,
+           "sent": null, "error": null, "stream": null}]}
 ```
-`rows` = the web rows the selection sends; `wait_s` = the wait after this file before the next (the printer
-record's `settle`: `per_row_s × rows (+2 with bookends) + floor_s`, rounded up; the `settle` override for every
-row; `null` = the printer's status is polled). `sent` / `error` are filled by print.
+`rows` = the web rows the selection sends. `sent`, `error` and `stream` are filled by print.
 
 ### `POST /api/print`
-Same body as plan, plus `"dry_run": true` to stop after the plan, `"bookends": true` to put a START block
-before and an END block after EVERY file's labels, in that file's send (off by default), and `"settle"` —
-seconds to wait between two files asking the printer nothing, `0` = no wait; omitted or `null` = the printer
-record's `settle` scaled to the rows just sent (see the README, *Long jobs on an Ethernet board*), else its
-status polled until `00` (a printer without status gets no wait). The wait counts from the moment the previous
-send returned.
+Same body as plan, plus `"dry_run": true` to stop after the plan and `"bookends": true` to put a START block
+before and an END block after EVERY file's labels (off by default). The clean plan is sent as ONE STREAM PER
+PRINTER: the registration prefix once, the darkness / speed retuned once in front, then every file for that
+printer in cart order (START, blocks, END with bookends) over one connection — see the README, *Long jobs on an
+Ethernet board*. There is no gap between files and nothing to wait for; `"settle"` is ignored.
 ```json
-{"plan": [...], "notes": ["a/b.ezpl labels 1-4,7 → sent … over USB", "settled 180 s before the next job (no status query)", "…"],
- "sent": true, "bookends": false}
+{"plan": [{"file": "a/b.ezpl", "…": "…", "sent": true, "error": null,
+           "stream": {"id": "3f2a9c1e", "offset": 10, "length": 612345}}],
+ "notes": ["stream 3f2a9c1e → tdp43me: 2 files, 70 blocks (4 bookends), 1,273,901 bytes — a/b.ezpl labels 1-4,7 (3 rows) · …",
+           "stream 3f2a9c1e → tdp43me: sent 1273901 bytes (70 labels) to 192.168.8.136:9100",
+           "a/b.ezpl labels 1-4,7 +2 bookends → sent in stream 3f2a9c1e (bytes 10–612355)", "…"],
+ "sent": true, "bookends": true}
 ```
 `sent` is false (and the status 409) while any row is refused: nothing goes to any printer until the cart is
-clean. With `dry_run` the status is 200 and `notes` is `["dry run — nothing sent"]` (with bookends:
-`["dry run — +2 bookends per file, nothing sent"]`).
+clean. With `dry_run` the status is 200, the notes describe each stream (files, blocks, bookends, bytes) and end
+with `dry run — nothing sent` (with bookends: `dry run — +2 bookends per file, nothing sent`).
 
-Every job waits for the print port to be ready before its first byte (refused / timed out / closed at once =
-not ready, retried with backoff for up to 900 s) — see the README, *Long jobs on an Ethernet board*. A send the
-printer cuts short is logged (`ok: false`, `bytes_sent`, `error`), stops the cart, and the response is 500 with
-`"error"` and the plan: each row carries `sent` (true / false / null = not attempted) and `error`. A job cut after
-0 bytes was retried already and may be sent again as it is; one cut after N bytes has labels on the paper — the
-operator reads the roll and resumes with a `labels` range.
-
-Bookends are the job's own start and end marks on the paper: black, hazard-striped, START naming the file, the
-labels of how many (`labels 97-128 of 128`), the count, the printer and the time; END with a CUT HERE band and
-`32/32 sent`. They are built on the job's media after the label selection (never selectable, never in `count`),
-pass the same guards, take the printer's darkness / speed like the labels, and travel in the same write — an END
-label in the hand is proof the stream arrived. Two blocks per file; a media too small for the mark refuses (400).
+Before each stream's connection the port is waited on (refused / timed out / closed at once = not ready, retried
+with backoff for up to 900 s). A stream the printer cuts is reported file by file: the files wholly before the
+cut have `sent: true`; the file in flight `sent: false` with `error` naming the web row the cut fell in (`cut
+inside c/d.ezpl at web row 12 of 66`) and a note with the resume range; the files after it `sent: false`,
+`error: "not sent: stream … was cut before it"`. The response is then 500 with `"error"` and the plan. Nothing
+is ever resent by the server; the operator reads the roll and resumes with a `labels` range.
 
 ### `POST /api/compose`
 A Spec, in one of three input forms:

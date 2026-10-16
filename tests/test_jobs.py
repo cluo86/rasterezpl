@@ -65,13 +65,14 @@ def test_plan_ambiguity_format_and_run(site):
     )
     assert [r.ok for r in rows] == [True, True] and rows[1].labels == "1-4" and rows[1].count == 4
     txt = format_plan(rows)
-    assert "7 labels in 2 files → 3 on filep, 4 on filep2" in txt
+    assert "7 labels in 2 files → 3 on filep (1 file, one stream), 4 on filep2 (1 file, one stream)" in txt
     # dry run, then the real thing, logged
     log = root / LOG_NAME
-    assert run(root, reg, rows, log, dry_run=True) == ["dry run — nothing sent"] and not log.exists()
+    assert run(root, reg, rows, log, dry_run=True)[-1] == "dry run — nothing sent" and not log.exists()
     notes = run(root, reg, rows, log)
-    # one note per row, and between two rows the wait for the printer (a file spool answers ready at once)
-    assert len(notes) == 3 and notes[1] == "printer ready (00 file spool (writable))"
+    # two printers → two streams: each described, then each sent with a note per file
+    assert len(notes) == 6 and notes[0].startswith("stream ") and " → filep: 1 file, 2 blocks, " in notes[0]
+    assert notes[3].startswith("a.ezpl labels 1-3 → sent in stream ")
     assert site["t1"].exists() and site["t2"].exists()
     assert rz.count_labels(site["t1"].read_bytes()) == 2 and site["t1"].read_bytes().startswith(
         b"^R10\r~Q-2\r"
@@ -125,7 +126,8 @@ def test_cli_printcart(site, capsys):
     argv1 = ["--registry", str(reg1), "printcart", "--root", str(site["root"])]
     assert main([*argv1, "--dry-run", "a.ezpl:1-2"]) == 0
     out = capsys.readouterr().out
-    assert "2 labels in 1 files → 2 on filep" in out and "dry run" in out and not site["t1"].exists()
+    assert "2 labels in 1 files → 2 on filep (1 file, one stream)" in out and "dry run" in out
+    assert not site["t1"].exists()
     assert main([*argv1, "a.ezpl:1-2"]) == 0
     assert rz.count_labels(site["t1"].read_bytes()) == 1
     assert (site["root"] / LOG_NAME).exists()

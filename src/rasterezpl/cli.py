@@ -9,7 +9,7 @@ rasterezpl image   --media M a.png b.png … -o job.ezpl                     bit
 rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status] [--dry-run] [--proof F.pdf|F.png] [--bookends] [--log F]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
-rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run] [--bookends] [--settle S]   several files, one plan, one print
+rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run] [--bookends] [--proof F]   several files, one plan, ONE stream per printer
 rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--open]   the browser front end (server.py)
 rasterezpl demo    [DIR] [--no-open] [--no-serve]                         a playground: demo jobs + file-spool printers
 """
@@ -24,7 +24,7 @@ from pathlib import Path
 from . import __version__
 from .calibrate import ruler_job
 from .compose import Spec, render
-from .jobs import LOG_NAME, format_plan, parse_cart, plan, run, send_logged, set_waits
+from .jobs import LOG_NAME, format_plan, parse_cart, plan, run, send_logged
 from .media import Media
 from .registry import Registry, load
 from .stream import (
@@ -188,9 +188,9 @@ def _parser() -> argparse.ArgumentParser:
 
     q = sub.add_parser(
         "printcart",
-        help="several job files in ONE plan and one print: FILE[:LABELS] … — the plan (file, labels, count, "
-        "printer chosen by the file's media) is shown, then one job per file; nothing is sent while any entry is "
-        "refused; every send is logged",
+        help="several job files in ONE plan and ONE stream per printer: FILE[:LABELS] … — the plan (file, labels, "
+        "count, printer chosen by the file's media) is shown, then the files go back to back over one connection "
+        "per printer; nothing is sent while any entry is refused; every file is logged",
     )
     q.add_argument(
         "entry",
@@ -210,14 +210,9 @@ def _parser() -> argparse.ArgumentParser:
         help="a START and an END label around EVERY file's labels, in that file's send (see print --bookends)",
     )
     q.add_argument(
-        "--settle",
-        type=float,
-        default=None,
-        metavar="SECONDS",
-        help="wait this long between two files and ask the printer nothing (an Ethernet board resets a "
-        "connection opened while it still prints the previous job from its buffer); 0 = no wait at all; "
-        "default: the printer record's `settle` (per_row_s × web rows just sent + floor_s), else poll the "
-        "printer's status until it answers 00, no wait when it has none",
+        "--proof",
+        help="write the composed stream(s) as a proof: .pdf = one page per web row at true scale, .png = the rows "
+        "stacked; one document per printer (<name>-<printer>.pdf when the cart spans several)",
     )
     q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
     return p
@@ -275,12 +270,19 @@ def main(argv: list[str] | None = None) -> int:
             rows = plan(root, reg, parse_cart(args.entry))
         except ValueError as e:
             sys.exit(str(e))
-        set_waits(reg, rows, args.bookends, args.settle)
-        print(format_plan(rows, bookends=args.bookends, settle=args.settle))
+        print(format_plan(rows, bookends=args.bookends))
+        for name in dict.fromkeys(r.printer for r in rows if r.ok and r.printer):
+            if reg.printers[name].settle_per_row_s is not None:
+                print(
+                    f"note: {name}'s `settle` record is ignored since 0.16.0 — a cart is one stream per printer, "
+                    "no gap between files"
+                )
         log = Path(args.log).expanduser() if args.log else root / LOG_NAME
-        for note in run(
-            root, reg, rows, log, dry_run=args.dry_run, bookends=args.bookends, settle=args.settle
-        ):
+        try:
+            notes = run(root, reg, rows, log, dry_run=args.dry_run, bookends=args.bookends, proof=args.proof)
+        except ValueError as e:
+            sys.exit(str(e))
+        for note in notes:
             print(note)
         if not all(r.ok for r in rows):
             return 2

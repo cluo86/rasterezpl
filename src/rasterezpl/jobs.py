@@ -20,10 +20,12 @@ import io
 import json
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from .media import Media
+from .media import Media, offset_commands
 from .registry import Registry
 from .stream import (
     blocks_outside_areas,
@@ -34,9 +36,10 @@ from .stream import (
     parse_selection,
     retune,
     select_labels,
+    serialise_block,
     tightest,
 )
-from .transport import deliver, wait_idle
+from .transport import deliver
 
 SPEC_RE = re.compile(r"^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
 LOG_NAME = ".rasterezpl-printlog.jsonl"
@@ -60,9 +63,9 @@ class PlanRow:
     media: str | None
     refused: str | None
     rows: int = 0  # web rows (label blocks) the selection sends — a partly selected row counts
-    wait_s: float | None = None  # the wait after this file before the next (set_waits): None = status poll
-    sent: bool | None = None  # after run(): True = delivered, False = the send failed, None = not attempted
-    error: str | None = None  # the failed send's message
+    sent: bool | None = None  # after run(): True = delivered, False = cut or not sent, None = not attempted
+    error: str | None = None  # why it was not delivered
+    stream: dict | None = None  # after run(): {"id", "offset", "length"} — where this file sits in its stream
 
     @property
     def ok(self) -> bool:
@@ -230,73 +233,38 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
     return rows
 
 
-def secs(v: float) -> str:
-    """Seconds for a note: whole when whole, else one decimal (180, 2.5, 109)."""
-    return f"{v:.1f}".rstrip("0").rstrip(".")
-
-
-def set_waits(
-    reg: Registry, rows: list[PlanRow], bookends: bool = False, settle: float | None = None
-) -> None:
-    """Fill each clean row's ``wait_s`` — the wait after that file before the next one. ``settle`` given = that
-    many seconds for every row (0 = no wait at all); else the printer record's ``settle`` scaled to the web rows
-    just sent (bookends included: two more); else None = poll the printer's status (the 0.14.0 behaviour)."""
-    for r in rows:
-        if not r.ok:
-            continue
-        if settle is not None:
-            r.wait_s = float(settle)
-            continue
-        pr = reg.printers.get(r.printer or "")
-        r.wait_s = pr.settle_for(r.rows + (2 if bookends else 0)) if pr else None
-
-
-def wait_policy(rows: list[PlanRow], settle: float | None = None) -> str:
-    """What happens between two files of a cart, as the plan states it."""
-    if settle is not None:
-        return (
-            f"between files: settle {secs(settle)} s, no status query"
-            if settle > 0
-            else "between files: no wait (--settle 0)"
-        )
-    if any(r.ok and r.wait_s is not None for r in rows):
-        return (
-            "between files: the printer record's settle, scaled to the rows just sent (then wait … s above)"
-        )
-    return "between files: poll the printer's status until it answers 00 (--settle N waits N s instead; no status = no wait)"
-
-
-def format_plan(rows: list[PlanRow], bookends: bool = False, settle: float | None = None) -> str:
+def format_plan(rows: list[PlanRow], bookends: bool = False) -> str:
     """The plan as a text table with a totals line (the CLI's output). ``count`` stays the real labels; with
-    ``bookends`` every clean row shows the START / END pair it will carry; with two or more clean rows each file
-    but the last shows its wait (``wait_s``, see :func:`set_waits`) and the policy (:func:`wait_policy`) is
-    stated."""
+    ``bookends`` every clean row shows the START / END pair it will carry. The totals say how many streams go:
+    one per printer, the files back to back inside it."""
     w = max([len(r.file) for r in rows] + [4])
     lines = [f"{'file':{w}s} {'labels':>7s}  {'printer':10s} labels"]
     ok = [r for r in rows if r.ok]
     for r in rows:
         state = f"REFUSED: {r.refused}" if r.refused else r.labels + (" +2 bookends" if bookends else "")
-        if r.ok and r.wait_s is not None:  # what the printer needs after this file before the next job
-            state += f" — then wait {secs(r.wait_s)} s" if r.wait_s > 0 else " — then no wait"
         lines.append(f"{r.file:{w}s} {r.count:7d}  {r.printer or '-':10s} {state}")
-    by_p: dict[str, int] = {}
+    by_p: dict[str, list[PlanRow]] = {}
     for r in ok:
-        by_p[r.printer or ""] = by_p.get(r.printer or "", 0) + r.count
+        by_p.setdefault(r.printer or "", []).append(r)
     lines.append(
         f"{sum(r.count for r in ok)} labels in {len(ok)} files → "
-        + (", ".join(f"{n} on {p}" for p, n in by_p.items()) or "nothing to send")
+        + (
+            ", ".join(
+                f"{sum(r.count for r in rs)} on {p} ({len(rs)} file{'s' if len(rs) != 1 else ''}, one stream)"
+                for p, rs in by_p.items()
+            )
+            or "nothing to send"
+        )
         + (" (+2 bookends per file)" if bookends and ok else "")
         + (f"; {len(rows) - len(ok)} file(s) refused" if len(ok) < len(rows) else "")
     )
-    if len(ok) > 1:
-        lines.append(wait_policy(rows, settle))
     return "\n".join(lines)
 
 
 def append_log(log: Path | None, entry: dict) -> None:
-    """One JSON line per send, success or failure. Keys: ts, file, labels, count, printer, transport, note,
-    bookends, ok, bytes_sent, and error on a failure — the keys of 0.3.1 … 0.13.0 unchanged, so every reader of
-    the old lines still parses the new."""
+    """One JSON line per file, success or failure. Keys: ts, file, labels, count, printer, transport, note,
+    bookends, ok, bytes_sent, stream {id, offset, length}, and error on a failure — the keys of 0.3.1 … 0.14.0
+    unchanged, so every reader of the old lines still parses the new."""
     if log is None:
         return
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -319,10 +287,10 @@ def send_logged(
     darkness: int | None = None,
     speed: int | None = None,
 ) -> tuple[bool, str]:
-    """Deliver one job (the heat retuned here when given) and log it either way — the one send path of
-    ``print``, ``printcart`` and ``POST /api/print``. Returns (ok, note): the transport's note, or on failure the
-    message with what the operator must know — nothing on the paper when 0 bytes went, else that labels ARE on
-    the paper and the resume range is theirs to read off the roll."""
+    """Deliver ONE job (the heat retuned here when given) and log it either way — the send path of ``print``.
+    Returns (ok, note): the transport's note, or on failure the message with what the operator must know —
+    nothing on the paper when 0 bytes went, else that labels ARE on the paper and the resume range is theirs to
+    read off the roll."""
     heat = darkness is not None or speed is not None
     if heat:
         data = retune(data, darkness, speed)
@@ -372,6 +340,133 @@ def bookended(m: Media, data: bytes, row: PlanRow, pr, ts: str | None = None) ->
     return with_bookends(m, data, row.file, row.labels, row.total, row.count, pr.name, ts)
 
 
+@dataclass
+class Part:
+    """One file's place in a stream: its blocks (after the selection, the bookends, and for the first part the
+    heat retune), ``offset`` = its first byte in the stream as sent (the registration prefix counted),
+    ``rows`` = its blocks, bookends included."""
+
+    row: PlanRow
+    data: bytes
+    offset: int = 0
+    rows: int = 0
+    per: int = 1  # labels per web row of the media (to name the labels of a cut row)
+
+    @property
+    def length(self) -> int:
+        return len(self.data)
+
+    @property
+    def end(self) -> int:
+        return self.offset + len(self.data)
+
+
+@dataclass
+class Stream:
+    """ONE job per printer: the registration prefix once, then every file of the cart for that printer back to
+    back, each with its bookends when asked — sent over one connection, so no file's first byte ever meets a
+    board that is still printing the previous file (the NetPS board resets such a connection; inside one
+    connection it simply takes bytes as its buffer drains and the chunked send rides the stall)."""
+
+    printer: str
+    media: Media
+    parts: list[Part]
+    prefix: bytes = b""
+    id: str = ""
+
+    @property
+    def data(self) -> bytes:
+        return self.prefix + b"".join(p.data for p in self.parts)
+
+    @property
+    def body(self) -> bytes:
+        """The stream without the registration prefix — what a proof or a media guard reads."""
+        return b"".join(p.data for p in self.parts)
+
+    @property
+    def blocks(self) -> int:
+        return sum(p.rows for p in self.parts)
+
+    @property
+    def length(self) -> int:
+        return len(self.prefix) + sum(p.length for p in self.parts)
+
+
+def compose_streams(root: Path, reg: Registry, rows: list[PlanRow], bookends: bool = False) -> list[Stream]:
+    """The clean plan as streams, one per printer in order of first appearance; the files in cart order inside.
+    Every part is built from its own file (selection, bookends); the printer's darkness / speed are retuned
+    ONCE, on the first part's setup, as a single job's would be; the prefix is the printer's registration."""
+    by: dict[str, list[PlanRow]] = {}
+    for r in rows:
+        by.setdefault(r.printer or "", []).append(r)
+    out = []
+    for name, rs in by.items():
+        pr = reg.printers[name]
+        parts = []
+        for r in rs:
+            m = reg.media[r.media or pr.media_name]
+            if not m.same_stock(pr.media):  # the plan refuses this already; a stream never mixes stocks
+                raise ValueError(
+                    f"{r.file}: media {r.media} is not the stock {pr.name} holds ({pr.media_name})"
+                )
+            data = select_labels(confine(root, r.file).read_bytes(), r.labels, m)
+            if bookends:
+                data = bookended(m, data, r, pr)
+            parts.append(Part(r, data, per=m.labels_per_block))
+        if pr.darkness is not None or pr.speed is not None:
+            parts[0].data = retune(parts[0].data, pr.darkness, pr.speed)
+        prefix = offset_commands(pr.media, pr.offset_in) if pr.offset_in != (0.0, 0.0) else b""
+        off = len(prefix)
+        for p in parts:
+            p.offset, p.rows = off, count_labels(p.data)
+            off += p.length
+        out.append(Stream(name, pr.media, parts, prefix, uuid.uuid4().hex[:8]))
+    return out
+
+
+def describe_stream(st: Stream, bookends: bool) -> str:
+    """One line for the plan / dry run: files, blocks, bookends, bytes, and each file's rows."""
+    n = len(st.parts)
+    files = " · ".join(
+        f"{p.row.file} labels {p.row.labels} ({p.rows - 2 if bookends else p.rows} rows)" for p in st.parts
+    )
+    return (
+        f"stream {st.id} → {st.printer}: {n} file{'s' if n != 1 else ''}, {st.blocks} blocks"
+        + (f" ({2 * n} bookends)" if bookends else "")
+        + f", {st.length:,} bytes — {files}"
+    )
+
+
+def cut_point(part: Part, accepted: int, bookends: bool) -> tuple[str, str | None]:
+    """Where a stream cut after ``accepted`` bytes falls inside ``part``: (what to say, the resume range or
+    None). The block in flight is the one holding the first byte the printer did not take."""
+    at = accepted - part.offset  # the first byte not accepted, within the part
+    pos, k = 0, 0
+    for setup, qs in parse_blocks(part.data):
+        k += 1
+        pos += len(serialise_block(setup, qs))
+        if at < pos:
+            break
+    rows = part.rows
+    r = part.row
+    if bookends and k == 1:
+        return f"cut inside the START mark of {r.file} — none of its labels were accepted", r.labels
+    if bookends and k == rows:
+        return (
+            f"cut inside the END mark of {r.file} — all its labels were accepted, only the END mark is missing",
+            None,
+        )
+    row, n = (k - 1, rows - 2) if bookends else (k, rows)
+    # the labels of that web row within the selection: resume from its first label to the selection's end
+    picked = parse_selection(r.labels, r.total) if r.total else []
+    blocks = sorted({(lab - 1) // part.per for lab in picked})
+    resume = None
+    if 0 < row <= len(blocks):
+        first = min(lab for lab in picked if (lab - 1) // part.per == blocks[row - 1])
+        resume = f"{first}-{picked[-1]}" if first != picked[-1] else f"{first}"
+    return f"cut inside {r.file} at web row {row} of {n}", resume
+
+
 def run(
     root: Path,
     reg: Registry,
@@ -380,70 +475,84 @@ def run(
     dry_run: bool = False,
     to: str | None = None,
     bookends: bool = False,
-    settle: float | None = None,
+    proof: str | Path | None = None,
 ) -> list[str]:
-    """Send every row of a clean plan — nothing while any row is refused. One note per row; EVERY send, success
-    or failure, is appended to ``log`` as a JSON line (:func:`append_log`). ``to`` overrides the transport for
-    every row (a tcp://, lp: or file path — a test spool); the printer's media and offset still apply.
-    ``bookends`` puts a START block before and an END block after every row's labels, in the same write
-    (:mod:`rasterezpl.bookends`); ``count`` stays the labels. Between two rows the printer is waited for
-    (:func:`set_waits`: ``settle`` seconds for every row, else the printer record's settle scaled to the rows
-    just sent, else its status until 00 — :func:`rasterezpl.transport.wait_idle`), counted from the moment the
-    previous send returned. A failed send stops the cart: the rows after it are not sent, and the note says so."""
-    if dry_run:
-        return ["dry run — " + ("+2 bookends per file, " if bookends else "") + "nothing sent"]
+    """Send a clean plan as ONE stream per printer (:func:`compose_streams`) — nothing while any row is refused.
+    Notes: one per stream, then one per file with its verdict. EVERY file is logged (:func:`append_log`),
+    success or failure, with its place in the stream. ``to`` overrides the transport for every stream (a
+    tcp://, lp: or file path — a test spool); the printer's media and offset still apply. ``bookends`` puts a
+    START block before and an END block after every file's labels. ``proof`` writes the composed stream(s) as
+    a proof document (one file per printer when there are several). A cut stream: the files wholly before the
+    cut are ok, the one in flight is logged with the web row the cut fell in and the resume range, the files
+    after it are logged as not sent; nothing is ever resent here."""
     if any(r.refused for r in rows):
         return ["REFUSED rows in the plan — nothing sent (fix the cart and run again)"]
-    set_waits(reg, rows, bookends, settle)
-    notes = []
-    t_returned = time.monotonic()
-    for i, r in enumerate(rows):
-        pr = reg.printers[r.printer or ""]
-        m = reg.media[r.media or pr.media_name]
+    streams = compose_streams(root, reg, rows, bookends)
+    notes = [describe_stream(st, bookends) for st in streams]
+    if proof:
+        from .proof import proof_document
+
+        out = Path(proof)
+        for st in streams:
+            dest = out if len(streams) == 1 else out.with_name(f"{out.stem}-{st.printer}{out.suffix}")
+            n = proof_document(st.media, st.body, dest, caption=f"stream {st.id} → {st.printer}")
+            notes.append(f"proof: {dest} ({n} web rows, {st.media.dpi} dpi)")
+    if dry_run:
+        notes.append("dry run — " + ("+2 bookends per file, " if bookends else "") + "nothing sent")
+        return notes
+    for st in streams:
+        pr = reg.printers[st.printer]
         target = to or pr.transport
-        if i:
-            prev = rows[i - 1]
-            try:
-                if prev.wait_s is None:
-                    notes.append(wait_idle(target))
-                elif prev.wait_s <= 0:
-                    notes.append("no wait before the next job (settle 0)")
-                else:
-                    left = prev.wait_s - (time.monotonic() - t_returned)
-                    notes.append(
-                        wait_idle(target, left)
-                        if left > 0
-                        else f"the {secs(prev.wait_s)} s wait after {prev.file} had already passed"
-                    )
-            except RuntimeError as e:
-                notes.append(f"FAILED: {e}; {len(rows) - i} file(s) not sent")
-                r.sent, r.error = False, str(e)
-                break
-        data = select_labels(confine(root, r.file).read_bytes(), r.labels, m)
-        if bookends:
-            data = bookended(m, data, r, pr)
-        ok, note = send_logged(
-            data,
-            target,
-            log,
-            file=r.file,
-            labels=r.labels,
-            count=r.count,
-            bookends=bookends,
-            printer=pr.name,
-            media=pr.media,
-            offset_in=pr.offset_in,
-            darkness=pr.darkness,
-            speed=pr.speed,
-        )
-        t_returned = time.monotonic()
-        r.sent = ok
-        notes.append(f"{r.file} labels {r.labels}{' +2 bookends' if bookends else ''} → {note}")
-        if not ok:
-            r.error = note
-            if i + 1 < len(rows):
-                notes.append(f"cart stopped: {len(rows) - i - 1} file(s) after {r.file} not sent")
-            break
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+        try:
+            note, accepted = deliver(st.data, target)
+            failure = None
+        except Exception as e:  # SendError (bytes known), a USB or lp failure (bytes unknown = 0)
+            accepted = int(getattr(e, "bytes_sent", 0) or 0)
+            failure = f"{e.__class__.__name__}: {e}" if not isinstance(e, RuntimeError) else str(e)
+            note = f"FAILED after {accepted} bytes of {st.length}: {failure}"
+        heat = ""
+        if pr.darkness is not None or pr.speed is not None:
+            dk = pr.darkness if pr.darkness is not None else "file"
+            sp = pr.speed if pr.speed is not None else "file"
+            heat = f"; darkness {dk}, speed {sp}"
+            note += f" ({heat[2:]})"
+        notes.append(f"stream {st.id} → {st.printer}: {note}")
+        for p in st.parts:
+            r = p.row
+            entry: dict[str, Any] = {
+                "ts": ts,
+                "file": r.file,
+                "labels": r.labels,
+                "count": r.count,
+                "printer": pr.name,
+                "transport": target,
+                "note": "",
+                "bookends": bookends,
+                "ok": False,
+                "bytes_sent": max(0, min(accepted - p.offset, p.length)),
+                "stream": {"id": st.id, "offset": p.offset, "length": p.length},
+            }
+            r.stream = entry["stream"]
+            if failure is None or p.end <= accepted:
+                r.sent, r.error = True, None
+                entry.update(ok=True, note=f"sent in stream {st.id} (bytes {p.offset}–{p.end}{heat})")
+                line = f"{r.file} labels {r.labels}{' +2 bookends' if bookends else ''} → {entry['note']}"
+            elif p.offset >= accepted:
+                r.sent, r.error = False, f"not sent: stream {st.id} was cut before it"
+                entry.update(error=r.error, note="not sent")
+                line = f"{r.file} labels {r.labels} → NOT SENT (the stream was cut before it)"
+            else:
+                what, resume = cut_point(p, accepted, bookends)
+                r.sent, r.error = False, what
+                entry.update(error=what, note=f"CUT — labels ARE on the paper up to the cut ({failure})")
+                line = f"{r.file} labels {r.labels} → CUT: {what}"
+                if resume:
+                    line += f"; resume with --labels {resume} — your call from what the roll shows; nothing is resent here"
+            append_log(log, entry)
+            notes.append(line)
+        if failure is not None:
+            break  # the streams for other printers wait for the operator
     return notes
 
 

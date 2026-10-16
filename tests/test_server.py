@@ -123,7 +123,7 @@ def test_print_dry_run_refused_and_real(site):
     b = site["base"]
     # dry run: the plan comes back, nothing is written
     st, j = _post(f"{b}/api/print", {"jobs": [{"file": "jobs/a.ezpl", "labels": "1-3"}], "dry_run": True})
-    assert st == 200 and j["sent"] is False and j["notes"] == ["dry run — nothing sent"]
+    assert st == 200 and j["sent"] is False and j["notes"][-1] == "dry run — nothing sent"
     assert not site["tiny"].exists()
     # one refused row stops the whole cart
     st, j = _post(
@@ -136,8 +136,8 @@ def test_print_dry_run_refused_and_real(site):
     st, j = _post(
         f"{b}/api/print", {"jobs": [{"file": "jobs/a.ezpl", "labels": "1-3"}, {"file": "other.ezpl"}]}
     )
-    assert st == 200 and j["sent"] is True and len(j["notes"]) == 3  # two sends, the wait between them
-    assert j["notes"][1].startswith("printer ready")
+    assert st == 200 and j["sent"] is True and len(j["notes"]) == 6  # two streams described, sent, noted
+    assert j["notes"][3].startswith("jobs/a.ezpl labels 1-3 → sent in stream ")
     spool = site["tiny"].read_bytes()
     assert spool.startswith(b"^R10\r~Q-2\r") and rz.count_labels(spool) == 2
     assert rz.count_labels(site["pand"].read_bytes()) == 1
