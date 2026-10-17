@@ -292,3 +292,73 @@ def test_api_print_takes_bookends(site):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# --- 0.18.0: the mark covers the whole die-cut label when the media knows it -------------------------------
+PAND = rz.PANDUIT_S150X225VATY_2UP  # label 450 × 675 dots, print-on block 450 × 225 at y 19, clear tail below
+
+
+def test_full_label_mark_word_on_the_block_details_on_the_tail():
+    assert bk.tag_rect(PAND, 0) == (38, 0, 450, 675) and bk.tag_rect(PAND, 1) == (488, 0, 450, 675)
+    lines = bk.start_lines("labels-mtp-B29-6210-6122.ezpl", "2,4,6,8,10,14,16", 128, 7, "tdp43me", TS)
+    img = bk.bookend_image(PAND, 0, "START", lines)
+    assert img.size == (450, 675)
+    hist = lambda im: im.histogram()[0] / (im.size[0] * im.size[1])  # noqa: E731 — black fraction
+    block = img.crop((0, 19, 450, 244))  # the print-on area: a black field with the word
+    tail = img.crop((0, 244, 450, 675))  # the clear tail: black text on white + a hazard band at the end
+    assert hist(block) > 0.5
+    assert 0.03 < hist(tail) < 0.3
+    assert hist(img.crop((0, 0, 450, 19))) == 0.0  # the 0.063 in above the block stays clear
+    # the tail's text is far larger than the block-only mark's small lines: its ink rows span most of the tail
+    rows = [y for y in range(244, 640) if img.crop((20, y, 430, y + 1)).histogram()[0]]
+    assert rows and rows[-1] - rows[0] > 150
+    # the END mark: the cut band on the block, the legend on the tail
+    end = bk.bookend_image(PAND, 0, "END", bk.end_lines("labels-mtp-B29-6210-6122.ezpl", 7, TS), cut=True)
+    assert (
+        end.size == (450, 675)
+        and end.tobytes() != img.tobytes()
+        and hist(end.crop((0, 244, 450, 675))) > 0.03
+    )
+
+
+def test_full_label_blocks_sit_on_the_label_rect_and_the_labels_stay_inside_the_areas(tmp_path):
+    data = rz.job(PAND, [[None, None]] * 2)
+    out = bk.with_bookends(PAND, data, "x.ezpl", "1-4", 4, 4, "tdp43me", TS)
+    blocks = parse_blocks(out)
+    assert len(blocks) == 4 and rz.matching_media(out, {"pand": PAND}) == ["pand"]
+    # the bookend blocks' Q rows cover the whole label length (printer frame y 0 … 675), both labels across
+    for b in (blocks[0], blocks[-1]):
+        ys = [y for _x, y, _wb, _rows, _raw in b[1]]
+        xs = {x for x, _y, _wb, _rows, _raw in b[1]}
+        assert min(ys) < 40 and max(ys) > 600
+        assert any(x < 100 for x in xs) and any(x > 450 for x in xs)
+    # the label blocks are untouched and inside the print areas; only the two marks reach the tails
+    assert rz.blocks_outside_areas(data, PAND) == []
+    outside = {n for n, _x, _y in rz.blocks_outside_areas(out, PAND)}
+    assert outside == {1, 4}
+    # a media without a label outline keeps the block-only mark, byte for byte (the 0.13.0 look)
+    plain = rz.Media(
+        name="plain",
+        dpi=PAND.dpi,
+        width_mm=PAND.width_mm,
+        length_mm=PAND.length_mm,
+        gap_mm=PAND.gap_mm,
+        areas_in=PAND.areas_in,
+    )
+    assert bk.tag_rect(plain, 0) == plain.area_px(0)
+    assert bk.bookend_image(plain, 0, "START", ["a", "b"]).size == (450, 225)
+    assert rz.blocks_outside_areas(bk.with_bookends(plain, data, "x.ezpl", "1-4", 4, 4, "p", TS), plain) == []
+
+
+def test_balanced_wrap_breaks_between_fields_and_keeps_short_lines_whole():
+    f = bk._font("Inter Bold", 30)
+    w = int(f.getlength("7 labels · tdp43me · 2026-10-17 16:35") * 0.7)
+    assert bk._balance(["7 labels · tdp43me · 2026-10-17 16:35"], f, w) == [
+        "7 labels",
+        "tdp43me",
+        "2026-10-17 16:35",
+    ]
+    assert bk._balance(["short line"], f, w) == ["short line"]
+    long = "missing END label = job was cut: count back and report the last label number"
+    pieces = bk._balance([long], f, w)
+    assert " ".join(pieces) == long and len(pieces) >= 2 and min(len(p.split()) for p in pieces) >= 3

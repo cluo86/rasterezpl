@@ -67,6 +67,13 @@ stream, after the selection and before the heat: never selectable, never counted
 and an END label in the hand is proof the whole stream arrived. Two blocks per job (a two-across web spends two
 labels per mark); off unless asked for. `--proof` shows them as the first and last page.
 
+On a media whose die-cut label is larger than its print area and known to the registry (`labels_in` — the
+Panduit self-laminating stock: a 0.75 in white block and a 1.5 in clear tail), the mark covers the WHOLE label
+(0.18.0): the word on the black block, the details in black on the clear tail in the largest face that fits.
+The tail takes thermal-transfer ink like the block does, and on a work tag it is wasted otherwise — the
+white-on-black details on the block alone were barely legible on the roll. A media without a label outline
+keeps the block-only mark.
+
 A partial selection on a two-across (or wider) web is **packed** into full rows (0.17.0): the selected labels,
 in label order, laid into rows area by area, so no row carries a blank except possibly the last. Seven
 one-side labels (`--labels 2,4,6,8,10,14,16` — the T2-end copies of seven cables, every one the right area of

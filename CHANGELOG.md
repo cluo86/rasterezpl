@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.0 — 2026-10-17
+
+- Bookends cover the WHOLE die-cut label when the media knows its outline (`labels_in`) and it is larger than
+  the print area — the Panduit S150X225VATY stock: START / END stay on the black 0.75 in block (the word now
+  fills it; the END keeps its CUT HERE band), and the details (file, labels of total, count · printer · time;
+  the END legend) go on the clear tail in black, in the largest bold face at which they fit, a hazard band at
+  the label's far end. The tail takes ink like the block and on a work tag it was wasted; the white-on-black
+  details on the block alone were barely legible on the roll (2026-10-17). Lines of fields break between the
+  fields first, a line that must break is split evenly. A media without `labels_in`, or whose label is its
+  print area, keeps the 0.13.0 block-only mark byte for byte. The tail ink lies outside the media's print
+  areas by design: a bookend block is never checked against them (the labels still are).
+
 ## 0.17.0 — 2026-10-17
 
 - A partial selection is PACKED into full rows on a multi-across web. The cart selects at label granularity

@@ -13,9 +13,18 @@ edges, the word START / END in the largest bold face that fits, and the END labe
 "CUT HERE" band. Label stock is dear and ink is cheap: exactly two blocks per job, every print area of a block
 carrying the mark (a two-across web spends two labels per bookend — one row).
 
+Since 0.18.0 a mark covers the WHOLE die-cut label when the media knows its outline (``labels_in``) and that is
+larger than the print area — the Panduit self-laminating stock: the word stays on the white print-on block, the
+details (file, labels, count, printer, time; the END legend) go on the clear tail in black, as large as they
+fit, with a hazard band at the label's far end. The tail takes thermal-transfer ink like the block does and on
+a work tag it is wasted otherwise (2026-10-17: the white-on-black details on the 0.75 in block alone were
+barely legible on the roll). A media without ``labels_in``, or whose label is its print area, keeps the
+block-only mark, byte for byte.
+
 The blocks are built from the job's own first setup (the same ``^Q``/``^W``/heat as its labels), so they pass
-the guards the labels pass — media match, inside the print areas — and the printer's darkness / speed retune
-at send time applies to them like any block. They are added AFTER the label selection: ``--labels`` picks from
+the media match the labels pass; the tail ink lies outside the print areas by design (a bookend block is never
+checked against them — it is not a label), and the printer's darkness / speed retune at send time applies to
+them like any block. They are added AFTER the label selection: ``--labels`` picks from
 the file, never from the bookends, and the count of labels never includes them.
 """
 
@@ -97,6 +106,41 @@ def _wrap(lines: Sequence[str], font, width: int) -> list[str]:
     return out
 
 
+def _balance(lines: Sequence[str], font, width: int) -> list[str]:
+    """Like :func:`_wrap`, but a line that must break is cut into the fewest pieces that fit, each break at the
+    space nearest an even share of the words — no piece strands one short word on a line of its own."""
+    out: list[str] = []
+    for line in lines:
+        words = line.split(" ")
+        greedy = _wrap([line], font, width)
+        k = len(greedy)
+        if k == 1 or len(words) < k:
+            out.extend(greedy)
+            continue
+        if " · " in line:  # a line of fields breaks between fields first, the separator dropped
+            fields = line.split(" · ")
+            if all(font.getlength(f) <= width for f in fields):
+                out.extend(fields)
+                continue
+        while k <= len(words):
+            pieces, i, ok = [], 0, True
+            for j in range(1, k + 1):
+                end = len(words) if j == k else round(j * len(words) / k)
+                piece = " ".join(words[i:end])
+                if font.getlength(piece) > width:
+                    ok = False
+                    break
+                pieces.append(piece)
+                i = end
+            if ok:
+                out.extend(pieces)
+                break
+            k += 1
+        else:
+            out.extend(greedy)
+    return out
+
+
 def _largest(face: str, text: str, max_w: float, max_h: float, px: int) -> ImageFont.FreeTypeFont:
     """The largest size of ``face`` from ``px`` down (never under 4 dots/em) at which ``text`` fits
     ``max_w`` × ``max_h`` dots — the 4-dot floor is returned as is, the caller's area is already tiny."""
@@ -111,18 +155,50 @@ def _largest(face: str, text: str, max_w: float, max_h: float, px: int) -> Image
 
 
 def _fit_small(
-    lines: Sequence[str], face: str, width: int, height: int, px: int
+    lines: Sequence[str], face: str, width: int, height: int, px: int, balance: bool = False
 ) -> tuple[list[str], ImageFont.FreeTypeFont]:
     """The small lines wrapped and the font shrunk until every line fits the width and the block fits the
-    height — never clipped."""
-    while px >= 4:
-        font = _font(face, px)
-        wrapped = _wrap(lines, font, width)
-        lp = round(px * 1.15)
+    height — never clipped. With ``balance``, a line keeps to ONE line when the face that allows it is at
+    least three quarters of the wrapped face, and a line that must break is split evenly (:func:`_balance`)."""
+    best: tuple[list[str], ImageFont.FreeTypeFont] | None = None
+    p = px
+    while p >= 4:
+        font = _font(face, p)
+        wrapped = _balance(lines, font, width) if balance else _wrap(lines, font, width)
+        lp = round(p * 1.15)
         if max(font.getlength(t) for t in wrapped) <= width and lp * len(wrapped) <= height:
-            return wrapped, font
-        px -= 1
-    raise ValueError(f"bookend text does not fit {width}×{height} dots even at 4 dots/em: {list(lines)}")
+            best = wrapped, font
+            break
+        p -= 1
+    if best is None:
+        raise ValueError(f"bookend text does not fit {width}×{height} dots even at 4 dots/em: {list(lines)}")
+    if balance and len(best[0]) > len(lines):
+        p = int(best[1].size)
+        while p >= max(4, round(int(best[1].size) * 0.75)):
+            font = _font(face, p)
+            if max(font.getlength(t) for t in lines) <= width and round(p * 1.15) * len(lines) <= height:
+                return list(lines), font
+            p -= 1
+    return best
+
+
+def tag_rect(m: Media, k: int) -> tuple[int, int, int, int]:
+    """Where print area ``k``'s bookend is drawn, (x, y, w, h) dots in the physical frame: the whole die-cut label
+    when ``labels_in`` names one that contains the area and is larger than it, else the print area itself."""
+    ax, ay, aw, ah = m.area_px(k)
+    if k < len(m.labels_in):
+        lx, ly, lw, lh = (m.dots(v) for v in m.labels_in[k])
+        if lw * lh > aw * ah and lx <= ax and ly <= ay and lx + lw >= ax + aw and ly + lh >= ay + ah:
+            return lx, ly, lw, lh
+    return ax, ay, aw, ah
+
+
+def _printer_rect(m: Media, rect: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """A physical-frame rect in the printer frame, as :meth:`Media.printer_rect` does for a print area."""
+    x, y, w, h = rect
+    if m.rotate180:
+        x, y = m.width_px - (x + w), m.length_px - (y + h)
+    return x, y, w, h
 
 
 def _scissors(d, cx: int, cy: int, size: int) -> None:
@@ -135,11 +211,11 @@ def _scissors(d, cx: int, cy: int, size: int) -> None:
     d.line([cx - size // 2 + 2 * r, cy - r, cx + size // 2, cy + r], fill=0, width=lw)
 
 
-def bookend_image(m: Media, area: int, word: str, lines: Sequence[str], cut: bool = False):
-    """One print area of a bookend as a Pillow 'L' image of the area's size (physical frame, ink 0):
+def _area_image(m: Media, area: int, word: str, lines: Sequence[str], cut: bool = False):
+    """The print-on block of a bookend as a Pillow 'L' image of the area's size (physical frame, ink 0):
     black field, white border inset ~1 mm, hazard hatch along the top and bottom, ``word`` white in the largest
-    bold face that fits, ``lines`` small and white under it (wrapped / shrunk, never clipped), and with ``cut`` a
-    white "CUT HERE" band across the middle with the text in black."""
+    bold face that fits, ``lines`` small and white under it (wrapped / shrunk, never clipped; none = the word
+    takes the whole interior), and with ``cut`` a white "CUT HERE" band with the text in black."""
     from PIL import Image, ImageDraw
 
     _, _, w, h = m.area_px(area)
@@ -160,7 +236,7 @@ def bookend_image(m: Media, area: int, word: str, lines: Sequence[str], cut: boo
     band = 0
     if cut:
         band = max(ih // 6, 8)
-    word_h = (ih - band) * 0.42
+    word_h = (ih - band) * (0.42 if lines else 0.9)
     font = _largest("Inter Bold", word, iw * 0.92, word_h, int(word_h))
     bb = font.getbbox(word)
     tw, th = bb[2] - bb[0], bb[3] - bb[1]
@@ -188,6 +264,8 @@ def bookend_image(m: Media, area: int, word: str, lines: Sequence[str], cut: boo
                 [xx, by0 + band // 2, min(xx + dash, x1), by0 + band // 2], fill=0, width=max(1, dash // 3)
             )
         top_used = by0 + band + 2
+    if not lines:
+        return img
     small_h = int(y1 - top_used)
     wrapped, sf = _fit_small(lines, "Inter", iw, small_h, max(5, int(small_h / (len(lines) * 1.3))))
     lp = round(sf.size * 1.15)
@@ -198,14 +276,58 @@ def bookend_image(m: Media, area: int, word: str, lines: Sequence[str], cut: boo
     return img
 
 
+def _tail(img, box: tuple[int, int, int, int], m: Media, lines: Sequence[str]) -> None:
+    """The details in black on the clear tail ``box`` = (x0, y0, w, h) of a full-label mark: a hazard band at
+    the label's far end, the lines centred in the largest face at which they all fit (wrapped, never clipped)."""
+    from PIL import ImageDraw
+
+    d = ImageDraw.Draw(img)
+    x0, y0, w, h = box
+    inset, hatch, stripe = (m.dots(v / 25.4) for v in (BORDER_INSET_MM, HATCH_MM, STRIPE_MM))
+    hatch, stripe = max(hatch, 4), max(stripe, 2)
+    d.rectangle([x0, y0 + h - hatch, x0 + w - 1, y0 + h - 1], fill=0)
+    _hatch(d, (x0, y0 + h - hatch, x0 + w, y0 + h), stripe)
+    tx, ty = x0 + inset + 2, y0 + inset + 2
+    tw, th = w - 2 * (inset + 2), h - hatch - 2 * (inset + 2)
+    if tw < 20 or th < 12:
+        return
+    wrapped, f = _fit_small(lines, "Inter Bold", tw, th, max(6, int(th / (len(lines) * 1.4))), balance=True)
+    lp = round(f.size * 1.15)
+    y = ty + (th - lp * len(wrapped)) / 2
+    for t in wrapped:
+        d.text((tx + (tw - f.getlength(t)) / 2, y), t, fill=0, font=f)
+        y += lp
+
+
+def bookend_image(m: Media, area: int, word: str, lines: Sequence[str], cut: bool = False):
+    """One bookend for print area ``area`` as a Pillow 'L' image (physical frame, ink 0) of :func:`tag_rect`'s
+    size. On a media whose die-cut label is larger than the area: the print-on block carries the hazard field
+    and the word (and the CUT HERE band), the clear tail the ``lines`` in black (:func:`_tail`); otherwise the
+    block carries everything (:func:`_area_image`), as before 0.18.0."""
+    from PIL import Image
+
+    lx, ly, lw, lh = tag_rect(m, area)
+    ax, ay, aw, ah = m.area_px(area)
+    if (lx, ly, lw, lh) == (ax, ay, aw, ah):
+        return _area_image(m, area, word, lines, cut)
+    img = Image.new("L", (lw, lh), 255)
+    img.paste(_area_image(m, area, word, [], cut), (ax - lx, ay - ly))
+    below, above = ly + lh - (ay + ah), ay - ly  # the tail is the larger remainder of the label
+    if below >= above:
+        _tail(img, (0, ay + ah - ly, lw, below), m, lines)
+    else:
+        _tail(img, (0, 0, lw, above), m, lines)
+    return img
+
+
 def _block(setup: bytes, m: Media, images: Sequence) -> bytes:
-    """A label block with the job's own setup bytes (not a fresh ``setup_commands``): image k in print area k,
-    rotated into the printer frame as ``label_block`` does."""
+    """A label block with the job's own setup bytes (not a fresh ``setup_commands``): image k on print area k's
+    :func:`tag_rect`, rotated into the printer frame as ``label_block`` does."""
     body = bytearray(setup)
     for k, img in enumerate(images):
         if m.rotate180:
             img = img.rotate(180)
-        ax, ay, _, _ = m.printer_rect(k)
+        ax, ay, _, _ = _printer_rect(m, tag_rect(m, k))
         body += pattern_blocks(img, ax, ay)
     body += b"E" + EOL
     return bytes(body)
