@@ -6,10 +6,10 @@ rasterezpl usb                           USB printer-class devices on the bus
 rasterezpl status  --printer P | --to T  ~S,CHECK (00 = ready)
 rasterezpl text    --media M --font F --pt 5.4 "l1\\nl2" … | --rows F.csv [--template T] -o job.ezpl   text labels → job
 rasterezpl image   --media M a.png b.png … -o job.ezpl                     bitmaps → job (one per area)
-rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--offset x,y] [--status] [--dry-run] [--proof F.pdf|F.png] [--bookends] [--log F]
+rasterezpl print   job.ezpl --printer P | --to T --media M [--labels 1,3,5-6 | --first N] [--no-pack] [--offset x,y] [--status] [--dry-run] [--proof F.pdf|F.png] [--bookends] [--log F]
 rasterezpl ruler   --printer P | --to T --media M [job.ezpl [--labels …]]  calibration label, optionally over a label
 rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job back to bitmaps (a proof)
-rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run] [--bookends] [--proof F]   several files, one plan, ONE stream per printer
+rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run] [--bookends] [--no-pack] [--proof F]   several files, one plan, ONE stream per printer
 rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--open]   the browser front end (server.py)
 rasterezpl demo    [DIR] [--no-open] [--no-serve]                         a playground: demo jobs + file-spool printers
 """
@@ -35,6 +35,7 @@ from .stream import (
     job,
     match_media,
     matching_media,
+    pack_labels,
     parse_blocks,
     parse_selection,
     select_labels,
@@ -117,6 +118,13 @@ def _parser() -> argparse.ArgumentParser:
     target_args(q)
     q.add_argument("--labels", help="which labels, print-dialog style: 1 | 1-2 | 1,3,5-6 (1-based)")
     q.add_argument("--first", type=int, help="only the first N label blocks")
+    q.add_argument(
+        "--no-pack",
+        action="store_true",
+        help="keep every selected label in its own web row and area (the other areas blank). Default: a partial "
+        "selection on a multi-across media is PACKED into full rows in label order — 7 one-side labels on a "
+        "2-across web go on 4 rows, not 7 with a blank each; a whole-row selection is unchanged either way",
+    )
     q.add_argument("--offset", help="override the printer's registration, x,y inches (x ≥ 0 → ^R, y → ~Q)")
     q.add_argument("--status", action="store_true", help="~S,CHECK first; refuse to send unless 00")
     q.add_argument(
@@ -210,6 +218,12 @@ def _parser() -> argparse.ArgumentParser:
         help="a START and an END label around EVERY file's labels, in that file's send (see print --bookends)",
     )
     q.add_argument(
+        "--no-pack",
+        action="store_true",
+        help="keep every selected label in its original web row and area (see print --no-pack); default: each "
+        "file's partial selection is packed into full rows, never across files",
+    )
+    q.add_argument(
         "--proof",
         help="write the composed stream(s) as a proof: .pdf = one page per web row at true scale, .png = the rows "
         "stacked; one document per printer (<name>-<printer>.pdf when the cart spans several)",
@@ -267,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         if not root.is_dir():
             sys.exit(f"--root {args.root!r} is not a directory")
         try:
-            rows = plan(root, reg, parse_cart(args.entry))
+            rows = plan(root, reg, parse_cart(args.entry), pack=not args.no_pack)
         except ValueError as e:
             sys.exit(str(e))
         print(format_plan(rows, bookends=args.bookends))
@@ -279,7 +293,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
         log = Path(args.log).expanduser() if args.log else root / LOG_NAME
         try:
-            notes = run(root, reg, rows, log, dry_run=args.dry_run, bookends=args.bookends, proof=args.proof)
+            notes = run(
+                root,
+                reg,
+                rows,
+                log,
+                dry_run=args.dry_run,
+                bookends=args.bookends,
+                proof=args.proof,
+                pack=not args.no_pack,
+            )
         except ValueError as e:
             sys.exit(str(e))
         for note in notes:
@@ -388,10 +411,15 @@ def main(argv: list[str] | None = None) -> int:
                 f"x {bx}, y {by}) — written for another frame or geometry of this stock; regenerate it"
             )
         total = count_labels(data)
+        packed, pack_note = False, None
         if args.labels:
-            data = select_labels(data, args.labels, m)
+            if args.no_pack:
+                data = select_labels(data, args.labels, m)
+            else:
+                data, packed, pack_note = pack_labels(data, args.labels, m)
         elif args.first:
             data = first_labels(data, args.first)
+        n_rows_sent = count_labels(data)
         n_labels = (  # the labels going: a partly selected web row counts its selected labels only
             len(parse_selection(args.labels, total * m.labels_per_block))
             if args.labels
@@ -419,8 +447,13 @@ def main(argv: list[str] | None = None) -> int:
         verb = "would send" if args.dry_run else "sending"
         print(
             f"{args.file}: {total} blocks × {m.labels_per_block} labels for {m.name}; {verb} {count_labels(data)} blocks"
-            + (f" ({count_labels(data) - 2} + 2 bookends per file)" if args.bookends else "")
+            + (f" ({n_rows_sent} + 2 bookends per file)" if args.bookends else "")
             + f" to {pr.name if pr else target}"
+            + (
+                f" — {n_labels} labels → {n_rows_sent} row{'s' if n_rows_sent != 1 else ''} (packed)"
+                if packed
+                else (f" — {n_rows_sent} rows, {pack_note}" if pack_note else "")
+            )
         )
         if args.proof:
             from .proof import proof_document
@@ -459,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
             offset_in=offset,
             darkness=dk,
             speed=sp,
+            rows=n_rows_sent,
+            packed=packed,
         )
         print(note)
         print(f"logged in {log}")

@@ -86,7 +86,8 @@ included; the picture is not kept).
 The last `n` print-log entries, oldest first:
 `[{"ts": "2026-09-30T12:07:01", "file": "…", "labels": "1-4", "count": 4, "printer": "tdp43me",
   "transport": "usb:0123ABCD", "note": "sent in stream 3f2a9c1e (bytes 10–23797)",
-  "bookends": false, "ok": true, "bytes_sent": 23787, "stream": {"id": "3f2a9c1e", "offset": 10, "length": 23787}}]`
+  "bookends": false, "ok": true, "bytes_sent": 23787, "stream": {"id": "3f2a9c1e", "offset": 10, "length": 23787},
+  "rows": 2, "packed": false}]`
 `count` is the labels; `bookends` says whether a START and an END block went around them (0.13.0). Since 0.14.0
 EVERY send is logged, success or failure — from `print`, `printcart` and this API — with `ok`, `bytes_sent` (the
 bytes of THIS file the printer accepted) and, on a failure, `error` and a `note` saying what is on the paper.
@@ -94,38 +95,46 @@ Since 0.16.0 a cart's files share one stream per printer and each line carries `
 `offset` (the file's first byte in the stream as sent, registration prefix counted) and `length`; a cut stream
 logs the files before the cut `ok: true`, the one in flight `ok: false` with `error: "cut inside F at web row
 N of M"` and `note: "CUT — labels ARE on the paper up to the cut (…)"`, the files after `ok: false`, `note:
-"not sent"`. A single `print` logs without `stream`. The keys of older lines are unchanged; lines written before
-0.13.0 / 0.14.0 / 0.16.0 lack the newer keys.
+"not sent"`. A single `print` logs without `stream`. Since 0.17.0 `rows` is the web rows the labels went on and
+`packed` whether a partial selection was laid into full rows; `labels` is always the selection as given (the
+paper is traced by label numbers). The keys of older lines are unchanged; lines written before 0.13.0 / 0.14.0 /
+0.16.0 / 0.17.0 lack the newer keys.
 
 ## POST endpoints
 
 ### `POST /api/plan`
 ```json
 {"jobs": [{"file": "a/b.ezpl", "labels": "1-4,7", "printer": "tdp43me"},
-          {"file": "c/d.ezpl"}]}
+          {"file": "c/d.ezpl"}],
+ "pack": true}
 ```
 `labels` is a print-dialog selection (`1`, `1-2`, `1,3,5-6`; 1-based); omitted = the whole file. `printer`
-omitted = the one registry printer holding the file's media (two candidates → refused: choose one).
+omitted = the one registry printer holding the file's media (two candidates → refused: choose one). `pack`
+(default true, 0.17.0): a partial selection on a multi-across media is packed into full web rows — the selected
+labels in label order, area by area, no blank except possibly on the last row (`2,4,6,8,10,14,16` on a 2-across
+web = 4 rows, not 7); per file, never across files; a selection that is whole rows anyway is unchanged.
 ```json
 {"plan": [{"file": "a/b.ezpl", "labels": "1-4,7", "count": 5, "total": 64, "printer": "tdp43me",
-           "media": "panduit-s150x225vaty-2up", "refused": null, "rows": 3,
+           "media": "panduit-s150x225vaty-2up", "refused": null, "rows": 3, "packed": true, "pack_note": null,
            "sent": null, "error": null, "stream": null}]}
 ```
-`rows` = the web rows the selection sends. `sent`, `error` and `stream` are filled by print.
+`rows` = the web rows the selection sends (the packed count when `packed`); `pack_note` names why a partial
+selection stayed unpacked (`not packed: print areas differ in size (…)` — a label moves only between areas of
+the same size in dots). `sent`, `error` and `stream` are filled by print.
 
 ### `POST /api/print`
-Same body as plan, plus `"dry_run": true` to stop after the plan and `"bookends": true` to put a START block
-before and an END block after EVERY file's labels (off by default). The clean plan is sent as ONE STREAM PER
+Same body as plan (`pack` included), plus `"dry_run": true` to stop after the plan and `"bookends": true` to put
+a START block before and an END block after EVERY file's labels (off by default). The clean plan is sent as ONE STREAM PER
 PRINTER: the registration prefix once, the darkness / speed retuned once in front, then every file for that
 printer in cart order (START, blocks, END with bookends) over one connection — see the README, *Long jobs on an
 Ethernet board*. There is no gap between files and nothing to wait for; `"settle"` is ignored.
 ```json
 {"plan": [{"file": "a/b.ezpl", "…": "…", "sent": true, "error": null,
            "stream": {"id": "3f2a9c1e", "offset": 10, "length": 612345}}],
- "notes": ["stream 3f2a9c1e → tdp43me: 2 files, 70 blocks (4 bookends), 1,273,901 bytes — a/b.ezpl labels 1-4,7 (3 rows) · …",
+ "notes": ["stream 3f2a9c1e → tdp43me: 2 files, 70 blocks (4 bookends), 1,273,901 bytes — a/b.ezpl labels 1-4,7 (5 labels → 3 rows, packed) · …",
            "stream 3f2a9c1e → tdp43me: sent 1273901 bytes (70 labels) to 192.168.8.136:9100",
            "a/b.ezpl labels 1-4,7 +2 bookends → sent in stream 3f2a9c1e (bytes 10–612355)", "…"],
- "sent": true, "bookends": true}
+ "sent": true, "bookends": true, "pack": true}
 ```
 `sent` is false (and the status 409) while any row is refused: nothing goes to any printer until the cart is
 clean. With `dry_run` the status is 200, the notes describe each stream (files, blocks, bookends, bytes) and end

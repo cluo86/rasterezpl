@@ -32,6 +32,8 @@ from .stream import (
     count_labels,
     decode_block,
     matching_media,
+    pack_blocker,
+    pack_labels,
     parse_blocks,
     parse_selection,
     retune,
@@ -62,7 +64,9 @@ class PlanRow:
     printer: str | None
     media: str | None
     refused: str | None
-    rows: int = 0  # web rows (label blocks) the selection sends — a partly selected row counts
+    rows: int = 0  # web rows (label blocks) the selection sends — packed rows when ``packed``
+    packed: bool = False  # the partial rows of the selection were packed into full rows (0.17.0)
+    pack_note: str | None = None  # why a partial selection stayed unpacked (the media's areas differ in size)
     sent: bool | None = None  # after run(): True = delivered, False = cut or not sent, None = not attempted
     error: str | None = None  # why it was not delivered
     stream: dict | None = None  # after run(): {"id", "offset", "length"} — where this file sits in its stream
@@ -137,8 +141,10 @@ def list_files(root: Path, reg: Registry) -> list[dict]:
     return out
 
 
-def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
-    """One :class:`PlanRow` per cart entry. Pure — nothing is sent."""
+def plan(root: Path, reg: Registry, jobs: list[dict], pack: bool = True) -> list[PlanRow]:
+    """One :class:`PlanRow` per cart entry. Pure — nothing is sent. ``pack`` (the default) lays a partial
+    selection into full web rows (:func:`rasterezpl.stream.pack_labels`): ``rows`` is then the packed count and
+    ``packed`` True; a media whose areas differ in size is never packed and ``pack_note`` says so."""
     rows: list[PlanRow] = []
     for j in jobs:
         file = str(j.get("file", ""))
@@ -219,7 +225,15 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
             row.refused = str(e)
             continue
         row.count = len(picked)
-        row.rows = len({(k - 1) // m.labels_per_block for k in picked})
+        per = m.labels_per_block
+        touched = {(k - 1) // per for k in picked}
+        row.rows = len(touched)
+        if pack and per > 1 and len(picked) < row.rows * per:  # at least one web row only partly selected
+            why = pack_blocker(m)
+            if why:
+                row.pack_note = f"not packed: {why}"
+            else:
+                row.packed, row.rows = True, -(-len(picked) // per)
         if not picked:
             row.refused = "no label selected"
             continue
@@ -233,6 +247,16 @@ def plan(root: Path, reg: Registry, jobs: list[dict]) -> list[PlanRow]:
     return rows
 
 
+def rows_note(r: PlanRow) -> str:
+    """`` → 4 rows (packed)`` for a packed selection, `` (7 rows, not packed: …)`` when the media refused the
+    pack, nothing for a selection that is whole rows anyway."""
+    if r.packed:
+        return f" → {r.rows} row{'s' if r.rows != 1 else ''} (packed)"
+    if r.pack_note:
+        return f" ({r.rows} rows, {r.pack_note})"
+    return ""
+
+
 def format_plan(rows: list[PlanRow], bookends: bool = False) -> str:
     """The plan as a text table with a totals line (the CLI's output). ``count`` stays the real labels; with
     ``bookends`` every clean row shows the START / END pair it will carry. The totals say how many streams go:
@@ -241,7 +265,11 @@ def format_plan(rows: list[PlanRow], bookends: bool = False) -> str:
     lines = [f"{'file':{w}s} {'labels':>7s}  {'printer':10s} labels"]
     ok = [r for r in rows if r.ok]
     for r in rows:
-        state = f"REFUSED: {r.refused}" if r.refused else r.labels + (" +2 bookends" if bookends else "")
+        state = (
+            f"REFUSED: {r.refused}"
+            if r.refused
+            else r.labels + rows_note(r) + (" +2 bookends" if bookends else "")
+        )
         lines.append(f"{r.file:{w}s} {r.count:7d}  {r.printer or '-':10s} {state}")
     by_p: dict[str, list[PlanRow]] = {}
     for r in ok:
@@ -263,8 +291,10 @@ def format_plan(rows: list[PlanRow], bookends: bool = False) -> str:
 
 def append_log(log: Path | None, entry: dict) -> None:
     """One JSON line per file, success or failure. Keys: ts, file, labels, count, printer, transport, note,
-    bookends, ok, bytes_sent, stream {id, offset, length}, and error on a failure — the keys of 0.3.1 … 0.14.0
-    unchanged, so every reader of the old lines still parses the new."""
+    bookends, ok, bytes_sent, stream {id, offset, length}, rows, packed, and error on a failure — the keys of
+    0.3.1 … 0.16.0 unchanged, so every reader of the old lines still parses the new. ``labels`` is always the
+    selection as given (the paper is traced by label numbers); ``rows`` the web rows those labels went on,
+    ``packed`` whether a partial selection was laid into full rows."""
     if log is None:
         return
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -286,6 +316,8 @@ def send_logged(
     offset_in: tuple[float, float] = (0.0, 0.0),
     darkness: int | None = None,
     speed: int | None = None,
+    rows: int | None = None,
+    packed: bool = False,
 ) -> tuple[bool, str]:
     """Deliver ONE job (the heat retuned here when given) and log it either way — the send path of ``print``.
     Returns (ok, note): the transport's note, or on failure the message with what the operator must know —
@@ -305,6 +337,8 @@ def send_logged(
         "bookends": bookends,
         "ok": False,
         "bytes_sent": 0,
+        "rows": (count_labels(data) - 2 if bookends else count_labels(data)) if rows is None else rows,
+        "packed": packed,
     }
     try:
         note, n = deliver(data, target, media, offset_in)
@@ -351,6 +385,9 @@ class Part:
     offset: int = 0
     rows: int = 0
     per: int = 1  # labels per web row of the media (to name the labels of a cut row)
+    packed: bool = (
+        False  # the selection's partial rows were packed: web row r holds picked[(r-1)·per : r·per]
+    )
 
     @property
     def length(self) -> int:
@@ -392,10 +429,14 @@ class Stream:
         return len(self.prefix) + sum(p.length for p in self.parts)
 
 
-def compose_streams(root: Path, reg: Registry, rows: list[PlanRow], bookends: bool = False) -> list[Stream]:
+def compose_streams(
+    root: Path, reg: Registry, rows: list[PlanRow], bookends: bool = False, pack: bool = True
+) -> list[Stream]:
     """The clean plan as streams, one per printer in order of first appearance; the files in cart order inside.
-    Every part is built from its own file (selection, bookends); the printer's darkness / speed are retuned
-    ONCE, on the first part's setup, as a single job's would be; the prefix is the printer's registration."""
+    Every part is built from its own file (selection, packed into full rows unless ``pack`` is off, bookends);
+    packing never crosses files — a web row never mixes two files and the bookends stay per file. The printer's
+    darkness / speed are retuned ONCE, on the first part's setup, as a single job's would be; the prefix is
+    the printer's registration."""
     by: dict[str, list[PlanRow]] = {}
     for r in rows:
         by.setdefault(r.printer or "", []).append(r)
@@ -409,10 +450,17 @@ def compose_streams(root: Path, reg: Registry, rows: list[PlanRow], bookends: bo
                 raise ValueError(
                     f"{r.file}: media {r.media} is not the stock {pr.name} holds ({pr.media_name})"
                 )
-            data = select_labels(confine(root, r.file).read_bytes(), r.labels, m)
+            raw = confine(root, r.file).read_bytes()
+            if pack:
+                data, packed, note = pack_labels(raw, r.labels, m)
+                r.packed, r.pack_note = packed, note
+            else:
+                data, packed = select_labels(raw, r.labels, m), False
+                r.packed, r.pack_note = False, None
+            r.rows = count_labels(data)
             if bookends:
                 data = bookended(m, data, r, pr)
-            parts.append(Part(r, data, per=m.labels_per_block))
+            parts.append(Part(r, data, per=m.labels_per_block, packed=packed))
         if pr.darkness is not None or pr.speed is not None:
             parts[0].data = retune(parts[0].data, pr.darkness, pr.speed)
         prefix = offset_commands(pr.media, pr.offset_in) if pr.offset_in != (0.0, 0.0) else b""
@@ -424,12 +472,18 @@ def compose_streams(root: Path, reg: Registry, rows: list[PlanRow], bookends: bo
     return out
 
 
+def _rows_of(p: Part, bookends: bool) -> str:
+    n = p.rows - 2 if bookends else p.rows
+    r = p.row
+    if r.packed:
+        return f"{r.count} labels → {n} row{'s' if n != 1 else ''}, packed"
+    return f"{n} rows" + (f", {r.pack_note}" if r.pack_note else "")
+
+
 def describe_stream(st: Stream, bookends: bool) -> str:
     """One line for the plan / dry run: files, blocks, bookends, bytes, and each file's rows."""
     n = len(st.parts)
-    files = " · ".join(
-        f"{p.row.file} labels {p.row.labels} ({p.rows - 2 if bookends else p.rows} rows)" for p in st.parts
-    )
+    files = " · ".join(f"{p.row.file} labels {p.row.labels} ({_rows_of(p, bookends)})" for p in st.parts)
     return (
         f"stream {st.id} → {st.printer}: {n} file{'s' if n != 1 else ''}, {st.blocks} blocks"
         + (f" ({2 * n} bookends)" if bookends else "")
@@ -459,11 +513,16 @@ def cut_point(part: Part, accepted: int, bookends: bool) -> tuple[str, str | Non
     row, n = (k - 1, rows - 2) if bookends else (k, rows)
     # the labels of that web row within the selection: resume from its first label to the selection's end
     picked = parse_selection(r.labels, r.total) if r.total else []
-    blocks = sorted({(lab - 1) // part.per for lab in picked})
     resume = None
-    if 0 < row <= len(blocks):
-        first = min(lab for lab in picked if (lab - 1) // part.per == blocks[row - 1])
-        resume = f"{first}-{picked[-1]}" if first != picked[-1] else f"{first}"
+    if part.packed:  # packed web row r holds the selection's labels (r-1)·per … r·per-1
+        if 0 < row <= n and (row - 1) * part.per < len(picked):
+            first = picked[(row - 1) * part.per]
+            resume = f"{first}-{picked[-1]}" if first != picked[-1] else f"{first}"
+    else:
+        blocks = sorted({(lab - 1) // part.per for lab in picked})
+        if 0 < row <= len(blocks):
+            first = min(lab for lab in picked if (lab - 1) // part.per == blocks[row - 1])
+            resume = f"{first}-{picked[-1]}" if first != picked[-1] else f"{first}"
     return f"cut inside {r.file} at web row {row} of {n}", resume
 
 
@@ -476,18 +535,20 @@ def run(
     to: str | None = None,
     bookends: bool = False,
     proof: str | Path | None = None,
+    pack: bool = True,
 ) -> list[str]:
     """Send a clean plan as ONE stream per printer (:func:`compose_streams`) — nothing while any row is refused.
     Notes: one per stream, then one per file with its verdict. EVERY file is logged (:func:`append_log`),
     success or failure, with its place in the stream. ``to`` overrides the transport for every stream (a
     tcp://, lp: or file path — a test spool); the printer's media and offset still apply. ``bookends`` puts a
-    START block before and an END block after every file's labels. ``proof`` writes the composed stream(s) as
+    START block before and an END block after every file's labels; ``pack`` (default) lays each file's partial
+    selection into full web rows (:func:`compose_streams`). ``proof`` writes the composed stream(s) as
     a proof document (one file per printer when there are several). A cut stream: the files wholly before the
     cut are ok, the one in flight is logged with the web row the cut fell in and the resume range, the files
     after it are logged as not sent; nothing is ever resent here."""
     if any(r.refused for r in rows):
         return ["REFUSED rows in the plan — nothing sent (fix the cart and run again)"]
-    streams = compose_streams(root, reg, rows, bookends)
+    streams = compose_streams(root, reg, rows, bookends, pack)
     notes = [describe_stream(st, bookends) for st in streams]
     if proof:
         from .proof import proof_document
@@ -532,6 +593,8 @@ def run(
                 "ok": False,
                 "bytes_sent": max(0, min(accepted - p.offset, p.length)),
                 "stream": {"id": st.id, "offset": p.offset, "length": p.length},
+                "rows": p.rows - 2 if bookends else p.rows,
+                "packed": p.packed,
             }
             r.stream = entry["stream"]
             if failure is None or p.end <= accepted:

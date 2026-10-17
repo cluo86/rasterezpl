@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from .media import EOL, Media, setup_commands
 
@@ -206,6 +207,61 @@ def select_labels(data: bytes, spec: str, m: Media) -> bytes:
             out += pattern_blocks(page.crop((ax, ay, ax + aw, ay + ah)), ax, ay)  # each kept area at its rect
         out += b"E" + EOL
     return bytes(out)
+
+
+def pack_blocker(m: Media) -> str | None:
+    """Why a partial selection on this media cannot be packed into full rows, or None when it can: a label is
+    moved from one print area to another only when every area has the same size in dots (a crop of area 0 laid
+    at area 1's rect is then the same ink, shifted). A one-across media has nothing to pack — None too."""
+    sizes = {m.area_px(k)[2:] for k in range(m.labels_per_block)}
+    if len(sizes) <= 1:
+        return None
+    dims = ", ".join(f"area {k} {m.area_px(k)[2]}×{m.area_px(k)[3]}" for k in range(m.labels_per_block))
+    return f"print areas differ in size ({dims})"
+
+
+def pack_labels(data: bytes, spec: str, m: Media) -> tuple[bytes, bool, str | None]:
+    """A selection PACKED into full web rows: the selected labels, in label order, laid into rows area by area
+    (row 1 = areas 0, 1, …; row 2 = areas 0, 1, …), so no row carries a blank except possibly the last — on a
+    2-across web the selection 2,4,6,8,10,14,16 (one side of seven cables) becomes 4 rows, not 7 rows with a
+    blank each (perm label stock is dear; 2026-10-17). Each label is the crop of its original block at its area's
+    rect, re-encoded at the destination rect on the file's own setup bytes; a packed row that is exactly an
+    original block (its areas in order, first at area 0) passes through byte for byte.
+
+    Returns (stream, packed, note). A selection with no partial block — every selected block fully selected,
+    e.g. 1-128 or the whole file — is :func:`select_labels`'s output byte for byte and ``packed`` is False; a
+    media whose areas differ in size (:func:`pack_blocker`) is not packed either, ``note`` says why, the labels
+    stay in their own rows with the other areas blank."""
+    blocks = parse_blocks(data)
+    per = m.labels_per_block
+    want = parse_selection(spec, len(blocks) * per)
+    by_block: dict[int, set[int]] = {}
+    for k in want:
+        by_block.setdefault((k - 1) // per, set()).add((k - 1) % per)
+    if per == 1 or all(len(a) == per for a in by_block.values()):
+        return select_labels(data, spec, m), False, None
+    why = pack_blocker(m)
+    if why:
+        return select_labels(data, spec, m), False, f"not packed: {why}"
+    pages: dict[int, Any] = {}
+    out = bytearray()
+    for start in range(0, len(want), per):
+        row = want[start : start + per]
+        b0 = (row[0] - 1) // per
+        if len(row) == per and all((k - 1) // per == b0 and (k - 1) % per == a for a, k in enumerate(row)):
+            out += serialise_block(*blocks[b0])
+            continue
+        setup = blocks[b0][0]
+        out += setup
+        for a, k in enumerate(row):
+            bi, src = (k - 1) // per, (k - 1) % per
+            if bi not in pages:
+                pages[bi] = decode_block(blocks[bi][1], m)
+            sx, sy, aw, ah = m.printer_rect(src)
+            dx, dy, _, _ = m.printer_rect(a)
+            out += pattern_blocks(pages[bi].crop((sx, sy, sx + aw, sy + ah)), dx, dy)
+        out += b"E" + EOL
+    return bytes(out), True, None
 
 
 def blocks_outside_areas(data: bytes, m: Media) -> list[tuple[int, int, int]]:

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.17.0 — 2026-10-17
+
+- A partial selection is PACKED into full rows on a multi-across web. The cart selects at label granularity
+  (`labels-mtp-B29-6210-6122.ezpl:2,4,6,8,10,14,16` — the T2-end copies of seven cables, every one the right
+  area of its row on the 2-across Panduit S150X225VATY web); `select_labels` kept each label in its own block
+  with the other area blank, so seven wanted labels spent 14 labels of stock. Now the selected labels, in label
+  order, are laid into rows area by area — row 1 = areas 0, 1; row 2 = areas 0, 1; … — so no row carries a
+  blank except possibly the last: the seven become 4 rows. Each label is the crop of its original block at its
+  area's rect, re-encoded at the destination rect on the file's own setup bytes; a packed row that is exactly an
+  original block passes through byte for byte. Only between print areas of the same size in dots; a media
+  whose areas differ is never packed (the labels keep their rows, the summary says why). A selection that is
+  whole rows anyway (`1-128`, the whole file, one full row) is byte-identical to 0.16.0 — the pin for every job
+  printed so far; packing happens only when at least one row is partly selected.
+- Default on. `--no-pack` on `print` and `printcart`, `"pack": false` on `POST /api/plan` / `/api/print`, and
+  the page's *pack partial rows* checkbox (ticked by default) keep every label in its original row and area.
+  Packing is per FILE inside a cart, never across files: a web row never mixes two files, the bookends stay per
+  file. The plan row says `2,4,6,8,10,14,16 → 4 rows (packed)`, the stream description `7 labels → 4 rows,
+  packed`, `print` `would send 4 blocks … — 7 labels → 4 rows (packed)`; the log line gains `rows` and
+  `packed`, `labels` keeps the selection as given (the paper is traced by label numbers); `--proof` shows the
+  packed rows; a cut inside a packed row resumes from that row's first selected label. Plan rows carry
+  `packed` and `pack_note`. Library: `pack_labels(data, spec, media) → (stream, packed, note)`, `pack_blocker`.
+
 ## 0.16.0 — 2026-10-16
 
 - `printcart` sends ONE stream per printer. The NetPS board resets a NEW connection opened while it still

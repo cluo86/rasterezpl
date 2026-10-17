@@ -146,3 +146,29 @@ def test_print_dry_run_refused_and_real(site):
     assert [e["file"] for e in entries] == ["jobs/a.ezpl", "other.ezpl"] and entries[0]["printer"] == "filep"
     st, _, body = _get(f"{b}/api/log?n=10")
     assert [e["count"] for e in json.loads(body)] == [3, 2]
+
+
+def test_plan_and_print_pack_a_partial_selection_unless_asked_not_to(site):
+    b = site["base"]
+    # jobs/a.ezpl = 2 web rows × 2 labels; labels 2,4 = the right area of each row → packed into ONE row
+    st, j = _post(f"{b}/api/plan", {"jobs": [{"file": "jobs/a.ezpl", "labels": "2,4"}]})
+    r = j["plan"][0]
+    assert st == 200 and (r["count"], r["rows"], r["packed"], r["pack_note"]) == (2, 1, True, None)
+    st, j = _post(f"{b}/api/plan", {"jobs": [{"file": "jobs/a.ezpl", "labels": "2,4"}], "pack": False})
+    r = j["plan"][0]
+    assert st == 200 and (r["rows"], r["packed"]) == (2, False)
+    st, j = _post(f"{b}/api/print", {"jobs": [{"file": "jobs/a.ezpl", "labels": "2,4"}], "dry_run": True})
+    assert st == 200 and j["pack"] is True and "(2 labels → 1 row, packed)" in j["notes"][0]
+    assert not site["tiny"].exists()
+    st, j = _post(f"{b}/api/print", {"jobs": [{"file": "jobs/a.ezpl", "labels": "2,4"}], "pack": False})
+    assert st == 200 and j["sent"] is True and j["pack"] is False
+    assert rz.count_labels(site["tiny"].read_bytes()) == 2
+    site["tiny"].unlink()
+    st, j = _post(f"{b}/api/print", {"jobs": [{"file": "jobs/a.ezpl", "labels": "2,4"}]})
+    assert st == 200 and j["sent"] is True and j["plan"][0]["packed"] is True
+    assert rz.count_labels(site["tiny"].read_bytes()) == 1
+    st, _, body = _get(f"{b}/api/log?n=2")
+    assert [(e["labels"], e["rows"], e["packed"]) for e in json.loads(body)] == [
+        ("2,4", 2, False),
+        ("2,4", 1, True),
+    ]

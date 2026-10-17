@@ -67,6 +67,17 @@ stream, after the selection and before the heat: never selectable, never counted
 and an END label in the hand is proof the whole stream arrived. Two blocks per job (a two-across web spends two
 labels per mark); off unless asked for. `--proof` shows them as the first and last page.
 
+A partial selection on a two-across (or wider) web is **packed** into full rows (0.17.0): the selected labels,
+in label order, laid into rows area by area, so no row carries a blank except possibly the last. Seven
+one-side labels (`--labels 2,4,6,8,10,14,16` — the T2-end copies of seven cables, every one the right area of
+its row) go on 4 rows, not 7 rows with a blank label each; label stock is dear, ink is cheap. A selection that
+is whole rows anyway (`1-128`, the whole file, `3-4`) is sent byte for byte as before; packing happens only when
+at least one row is partly selected, the summary then says `7 labels → 4 rows (packed)` and the print log
+carries `rows` and `packed` (the `labels` key keeps the selection as given — the paper is traced by label
+numbers). A label is moved only between print areas of the same size in dots; a media whose areas differ is
+never packed, the labels keep their own rows with the other area blank, and the summary says why.
+`--no-pack` keeps every label in its original row and area on any media. `--proof` shows the packed rows.
+
 ## Long jobs on an Ethernet board
 
 Learned on a Panduit TDP43ME with the NetPS Ethernet board (`tcp://…:9100`), 2026-10-16, eight 128-label jobs
@@ -188,6 +199,12 @@ on an Ethernet board*). `--bookends` marks every file inside the stream: START, 
 the same as a checkbox beside *print*, off by default, and the API takes `"bookends": true`; the print log
 marks each entry. `--proof F.pdf|F.png` writes the composed stream as a proof (one document per printer). A cut
 stream is logged file by file, the exit code is 1, and nothing is resent.
+
+Each file's partial selection is packed into full rows (see `print`, 0.17.0) — per FILE, never across files: a
+web row never mixes two files and the bookends stay per file. The plan row says `2,4,6,8,10,14,16 → 4 rows
+(packed)` and the stream description `7 labels → 4 rows, packed`; a whole-row selection is unchanged and says
+nothing. `--no-pack` (the page's *pack partial rows* checkbox unticked, `"pack": false` on the API) keeps every
+label in its original row and area.
 
 ### Your own labels
 

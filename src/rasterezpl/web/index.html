@@ -95,16 +95,16 @@ function renderFiles() {
 function addToCart(i) { const f = FILES[i]; CART.push({file: f.file, labels: $("sel-" + i).value.trim(), printer: $("pr-" + i).value || undefined}); saveCart(); renderCart(); }
 function rmCart(i) { CART.splice(i, 1); saveCart(); renderCart(); }
 function clearCart() { CART = []; saveCart(); renderCart(); }
-function planTable(rows) { return `<table><tr><th>file</th><th>labels</th><th>count</th><th>printer</th><th>state</th></tr>${rows.map(r => `<tr><td><code>${esc(r.file)}</code></td><td>${esc(r.labels)}</td><td>${r.count}/${r.total} <span class="muted">(${r.rows} rows)</span></td><td>${esc(r.printer || "-")}</td><td class="${r.refused || r.sent === false ? "bad" : "ok"}">${esc(r.refused || r.error || (r.stream ? `sent in stream ${r.stream.id} (bytes ${r.stream.offset}–${r.stream.offset + r.stream.length})` : "ok"))}</td></tr>`).join("")}</table>`; }
+function planTable(rows) { return `<table><tr><th>file</th><th>labels</th><th>count</th><th>printer</th><th>state</th></tr>${rows.map(r => `<tr><td><code>${esc(r.file)}</code></td><td>${esc(r.labels)}</td><td>${r.count}/${r.total} <span class="muted">(${r.rows} rows${r.packed ? ", packed" : ""}${r.pack_note ? ", " + esc(r.pack_note) : ""})</span></td><td>${esc(r.printer || "-")}</td><td class="${r.refused || r.sent === false ? "bad" : "ok"}">${esc(r.refused || r.error || (r.stream ? `sent in stream ${r.stream.id} (bytes ${r.stream.offset}–${r.stream.offset + r.stream.length})` : "ok"))}</td></tr>`).join("")}</table>`; }
 function renderCart() {
   PLAN = null;
   if (!CART.length) { $("cart").innerHTML = "<b>cart</b> <span class=\"muted\">empty — compose labels or add files below</span>"; return; }
   $("cart").innerHTML = `<b>cart</b> ${CART.length} job(s) <button class="rm" onclick="clearCart()">clear</button><table>${CART.map((c, i) => `<tr><td><code>${esc(c.file)}</code></td><td>labels ${esc(c.labels || "all")}</td><td>${esc(c.printer || "auto")}</td><td><button class="rm" onclick="rmCart(${i})">remove</button></td></tr>`).join("")}</table>
-  <button class="big" onclick="doPlan()">plan (nothing sent)</button> <button class="big" id="printbtn" disabled onclick="doPrint()">print</button> <label title="a black, hazard-striped START label before and an END label (with a CUT HERE band) after every file's labels, in the same send — the paper shows where a job begins and that it completed; two extra labels per file, never counted"><input type="checkbox" id="bookends"> bookends (START / END labels per file)</label><div id="plan"></div><div id="note"></div>`;
+  <button class="big" onclick="doPlan()">plan (nothing sent)</button> <button class="big" id="printbtn" disabled onclick="doPrint()">print</button> <label title="a black, hazard-striped START label before and an END label (with a CUT HERE band) after every file's labels, in the same send — the paper shows where a job begins and that it completed; two extra labels per file, never counted"><input type="checkbox" id="bookends"> bookends (START / END labels per file)</label> <label title="a partial selection on a 2-across web is laid into full rows in label order (7 one-side labels → 4 rows, not 7 with a blank each); per file, never across files; a whole-row selection is unchanged. Untick to keep every label in its own row and area"><input type="checkbox" id="pack" checked> pack partial rows</label><div id="plan"></div><div id="note"></div>`;
 }
 async function doPlan() {
   try {
-    const j = await api("/api/plan", {jobs: CART}); PLAN = j.plan;
+    const j = await api("/api/plan", {jobs: CART, pack: $("pack").checked}); PLAN = j.plan;
     const ok = !PLAN.some(r => r.refused), n = PLAN.reduce((a, r) => a + r.count, 0), be = $("bookends").checked;
     const printers = [...new Set(PLAN.filter(r => !r.refused).map(r => r.printer))];
     $("plan").innerHTML = planTable(PLAN) + `<div class="${ok ? "ok" : "bad"}">${ok ? `${n} labels ready${be ? ` (+2 bookends per file, ${PLAN.length} file${PLAN.length === 1 ? "" : "s"})` : ""} — one stream per printer (${printers.join(", ")}), the files back to back — press print` : "fix the refused rows"}</div>`;
@@ -115,7 +115,7 @@ async function doPrint() {
   if (!PLAN) return;
   $("printbtn").disabled = true; $("note").textContent = "sending…";
   try {
-    const j = await api("/api/print", {jobs: CART, bookends: $("bookends").checked});
+    const j = await api("/api/print", {jobs: CART, bookends: $("bookends").checked, pack: $("pack").checked});
     $("note").innerHTML = `<pre>${esc(j.notes.join("\n"))}</pre>`;
     if (j.plan) $("plan").innerHTML = planTable(j.plan);
     if (j.sent) { CART = []; saveCart(); loadLog(); setTimeout(renderCart, 4000); }
@@ -123,7 +123,7 @@ async function doPrint() {
 }
 async function loadLog() {
   const j = await api("/api/log?n=20");
-  $("log").innerHTML = j.length ? `<table>${j.slice().reverse().map(e => `<tr class="${e.ok === false ? "bad" : ""}"><td>${esc(e.ts)}</td><td><code>${esc(e.file)}</code></td><td>${esc(e.labels)} (${e.count})${e.bookends ? " +2 bookends" : ""}</td><td>${esc(e.printer)}</td><td>${e.ok === false ? `<b>${esc(e.note)}</b> — ${esc(e.error || "")}` : esc(e.note)}</td></tr>`).join("")}</table>` : "nothing printed yet";
+  $("log").innerHTML = j.length ? `<table>${j.slice().reverse().map(e => `<tr class="${e.ok === false ? "bad" : ""}"><td>${esc(e.ts)}</td><td><code>${esc(e.file)}</code></td><td>${esc(e.labels)} (${e.count}${e.packed ? ` → ${e.rows} rows, packed` : ""})${e.bookends ? " +2 bookends" : ""}</td><td>${esc(e.printer)}</td><td>${e.ok === false ? `<b>${esc(e.note)}</b> — ${esc(e.error || "")}` : esc(e.note)}</td></tr>`).join("")}</table>` : "nothing printed yet";
 }
 
 // ---- compose -----------------------------------------------------------------------------------------------

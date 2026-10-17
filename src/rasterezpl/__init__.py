@@ -1,6 +1,6 @@
 """rasterezpl — print any bitmap to Godex-language (EZPL) label printers, driverless, from macOS or Linux."""
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 from .bookends import bookend_blocks, bookend_image, with_bookends
 from .calibrate import ruler_job, ruler_page
@@ -39,6 +39,8 @@ from .stream import (
     label_block,
     match_media,
     matching_media,
+    pack_blocker,
+    pack_labels,
     parse_blocks,
     parse_selection,
     pattern_blocks,
@@ -104,6 +106,8 @@ __all__ = [
     "match_media",
     "matching_media",
     "offset_commands",
+    "pack_blocker",
+    "pack_labels",
     "parse_blocks",
     "parse_rows",
     "parse_selection",

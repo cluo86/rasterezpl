@@ -66,14 +66,15 @@ ENDPOINTS: list[tuple[str, str, str]] = [
     (
         "POST",
         "/api/plan",
-        '{"jobs":[{"file","labels"?,"printer"?}]} → the plan (one row per file), nothing sent',
+        '{"jobs":[{"file","labels"?,"printer"?}],"pack"?} → the plan (one row per file), nothing sent',
     ),
     (
         "POST",
         "/api/print",
-        '{"jobs":[…],"dry_run"?,"bookends"?} → plan + ONE stream per printer, the files back to back (bookends: '
-        "a START and an END label around every file's labels); 409 while any row is refused, 500 when a stream "
-        "is cut (every file logged with its verdict)",
+        '{"jobs":[…],"dry_run"?,"bookends"?,"pack"?} → plan + ONE stream per printer, the files back to back '
+        "(bookends: a START and an END label around every file's labels; pack, default true: a partial "
+        "selection packed into full web rows); 409 while any row is refused, 500 when a stream is cut (every "
+        "file logged with its verdict)",
     ),
     ("POST", "/api/compose", 'a Spec (+ "preview": true for the PNG of row 1) → composed/<name>-<hash>.ezpl'),
     ("POST", "/api/import", '{"pemx": <base64>} → an Easy-Mark project\'s texts, point size, part'),
@@ -275,17 +276,26 @@ class Handler(SimpleHTTPRequestHandler):
                 jobs = doc.get("jobs")
                 if not isinstance(jobs, list) or not jobs:
                     return self._json({"error": "jobs: a non-empty list of {file, labels, printer?}"}, 400)
-                rows = plan(self.root, self.reg, jobs)
                 bookends = bool(doc.get("bookends"))
+                pack = bool(doc.get("pack", True))
+                rows = plan(self.root, self.reg, jobs, pack=pack)
                 if path == "/api/plan":
                     return self._json({"plan": [asdict(r) for r in rows]})
                 dry = bool(doc.get("dry_run"))
                 refused = any(r.refused for r in rows)
                 with self.lock:  # one stream at a time on the bus
-                    notes = run(self.root, self.reg, rows, self.log_path, dry_run=dry, bookends=bookends)
+                    notes = run(
+                        self.root, self.reg, rows, self.log_path, dry_run=dry, bookends=bookends, pack=pack
+                    )
                 failed = [r for r in rows if r.sent is False]
                 sent = not dry and not refused and not failed
-                body = {"plan": [asdict(r) for r in rows], "notes": notes, "sent": sent, "bookends": bookends}
+                body = {
+                    "plan": [asdict(r) for r in rows],
+                    "notes": notes,
+                    "sent": sent,
+                    "bookends": bookends,
+                    "pack": pack,
+                }
                 if failed:
                     body["error"] = failed[0].error or "a send failed"
                 return self._json(body, 200 if sent or dry else (500 if failed else 409))
