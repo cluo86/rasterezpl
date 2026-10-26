@@ -324,9 +324,10 @@ def deliver(
     """Deliver a job to a target (see the module docstring); ``offset_in`` = that printer's registration, prefixed
     as ^R / ~Q. Returns (a one-line note, the bytes delivered). A send the printer cuts short raises
     :class:`SendError` with the bytes it had accepted."""
-    if offset_in != (0.0, 0.0):
-        if m is None:
+    if m is None:
+        if offset_in != (0.0, 0.0):
             raise ValueError("an offset needs the media (its dpi)")
+    else:  # always — a zero too, or the printer prints with the registration the LAST job left in it
         data = offset_commands(m, offset_in) + data
     n_labels = count_labels(data)
     if target.startswith("tcp://"):

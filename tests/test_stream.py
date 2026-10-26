@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 import rasterezpl as rz
@@ -137,7 +139,10 @@ def test_header_and_media_match():
 def test_offsets_are_the_printers_not_the_files(tmp_path):
     m = rz.PANDUIT_S150X225VATY_2UP
     assert rz.offset_commands(m, (0.1, -0.02)) == b"^R30\r~Q-6\r"
-    assert rz.offset_commands(m, (0.0, 0.05)) == b"~Q+15\r"
+    # 0.19.0: a zero is SENT, not left out — the printer keeps the last job's ^R / ~Q (its self-test slip prints
+    # them), so a job that stated nothing printed with the previous stock's registration (2026-10-25)
+    assert rz.offset_commands(m, (0.0, 0.05)) == b"^R0\r~Q+15\r"
+    assert rz.offset_commands(m, (0.0, 0.0)) == b"^R0\r~Q+0\r"
     with pytest.raises(ValueError):
         rz.offset_commands(m, (-0.045, 0.0))
     with pytest.raises(ValueError):
@@ -146,8 +151,27 @@ def test_offsets_are_the_printers_not_the_files(tmp_path):
     out = tmp_path / "j.ezpl"
     note = rz.send(data, str(out), M2, (0.1, -0.02))
     assert "1 labels" in note and out.read_bytes() == b"^R10\r~Q-2\r" + data
-    rz.send(data, str(out))
+    rz.send(data, str(out), M2)  # no offset given = a zero registration, stated
+    assert out.read_bytes() == b"^R0\r~Q+0\r" + data
+    rz.send(data, str(out))  # no media = the bytes as they are (nothing to state them in)
     assert out.read_bytes() == data
+
+
+def test_a_turned_round_die_is_never_the_same_stock():
+    """2026-10-25: a self-laminating stock with the SAME page as the Panduit S150X225VATY but the white block at
+    the trailing end — a job for one lands on the other's clear tail, upside down. Same page, not the same stock."""
+    p = rz.PANDUIT_S150X225VATY_2UP
+    turned = replace(p, name="turned", rotate180=False)
+    assert p.same_stock(rz.PANDUIT_S150X225VATY_2UP_FULL) and not p.same_stock(turned)
+    # the print area moves to the other end of the printer frame, nothing else
+    assert p.printer_rect(0)[1] == 431 and turned.printer_rect(0)[1] == 19
+    # a die at another place on the web is another stock too
+    assert not p.same_stock(replace(p, labels_in=((0.0, 0.0, 1.5, 2.25), (1.5, 0.0, 1.5, 2.25))))
+    # and the planner's "tightest fit" keeps the two apart: a job on the block of either matches only its own
+    j = rz.job(p, [[img(450, 225, [(0, 0)]), None]])
+    assert rz.match_media(j, {"p": p, "turned": turned})[0] == "p"
+    jt = rz.job(turned, [[img(450, 225, [(0, 0)]), None]])
+    assert rz.match_media(jt, {"p": p, "turned": turned})[0] == "turned"
 
 
 def test_render_text_refuses_to_clip_and_ruler_overlays():

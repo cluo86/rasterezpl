@@ -142,10 +142,19 @@ printer offset until you print a ruler.
 - The EZPL origin is the **trailing** edge of the label, x to the right as seen from the front. A label drawn
   leading-edge-up prints upside down at the tail. `Media.rotate180` (default on) handles it.
 - `^XSET,OFFSET` is ignored by older firmware (the TDP43ME). `^R` (left margin) and `~Q` (row offset) work.
+- The printer KEEPS `^R` / `~Q` (and `^H` / `^S`) between jobs — its self-test slip prints the stored values. A
+  job that states none prints with whatever the last job left: a second stock on the same head with "no
+  offset" inherited the first stock's +24 / +9 dots, and a ruler read 24 dots off (2026-10-25). Every send
+  now states its registration, a zero included, the ruler too; give a head that carries two stocks its heat
+  in each record rather than relying on "the printer's own setting".
+- A stock whose die is turned round on the web (the white block at the trailing end) shares the page with
+  the one it resembles but not the frame: `rotate180: false` with the same areas puts the block at the other
+  end, and `same_stock` keeps the two apart so a job for one is never sent to the other.
 - Godex and Panduit printers can share one USB id (195f:0001). Select by serial or name.
 - `Q` blocks take x in dots but carry bytes; the image is padded to the byte boundary so content stays at x.
 - Bitmap data can contain `\rE\r`; jobs are parsed by declared lengths, never split on bytes.
-- Use the printer's stored darkness and speed unless you know the values your old software sent.
+- Use the printer's stored darkness and speed unless you know the values your old software sent — and once
+  two stocks share a head, record each one's (the stored value is the last job's).
 
 ## Try it with no printer
 

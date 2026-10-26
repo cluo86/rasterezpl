@@ -463,7 +463,9 @@ def compose_streams(
             parts.append(Part(r, data, per=m.labels_per_block, packed=packed))
         if pr.darkness is not None or pr.speed is not None:
             parts[0].data = retune(parts[0].data, pr.darkness, pr.speed)
-        prefix = offset_commands(pr.media, pr.offset_in) if pr.offset_in != (0.0, 0.0) else b""
+        prefix = offset_commands(
+            pr.media, pr.offset_in
+        )  # a zero too (0.19.0): the printer keeps the last one
         off = len(prefix)
         for p in parts:
             p.offset, p.rows = off, count_labels(p.data)

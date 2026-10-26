@@ -519,9 +519,10 @@ def main(argv: list[str] | None = None) -> int:
             if not blocks:
                 sys.exit("no label block in the file")
             over = decode_block(blocks[0][1], m)
-        print(send(ruler_job(m, font, over), target))
+        # a ZERO registration, stated: the printer keeps the last job's ^R / ~Q (0.19.0) — the ruler must not inherit it
+        print(send(ruler_job(m, font, over), target, m, (0.0, 0.0)))
         print(
-            "read the ruler (printer frame, no offset applied): x where the print-on edge on the x = 0 side cuts the "
+            "read the ruler (printer frame, ^R0 ~Q+0 sent in front): x where the print-on edge on the x = 0 side cuts the "
             "scale → offset x; y at the print-on edge nearest the trailing edge minus the media's placement → offset y"
         )
         return 0

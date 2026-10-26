@@ -143,7 +143,7 @@ def test_run_sends_n_plus_2_in_order_and_logs_the_flag(site):
     rows2 = plan(root, reg, [{"file": "b.ezpl", "printer": "p2"}])
     run(root, reg, rows2, log, bookends=True)
     spool2 = site["t"][1].read_bytes()
-    assert spool2.startswith(b"^Q30,2\r^W80\r~R200\r^AT\r^H12\r") and rz.count_labels(spool2) == 4
+    assert spool2.startswith(b"^R0\r~Q+0\r^Q30,2\r^W80\r~R200\r^AT\r^H12\r") and rz.count_labels(spool2) == 4
     assert json.loads(log.read_text().splitlines()[-1])["bookends"] is True
 
 

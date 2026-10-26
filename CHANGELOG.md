@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.19.0 — 2026-10-25
+
+- The registration prefix is ALWAYS sent — `^R<n>` and `~Q<±n>` both, a zero as `^R0` / `~Q+0` — in front of
+  every send, the ruler included (`deliver` with a media; a send without one is the bytes as given). The
+  printer keeps `^R` / `~Q` between jobs (its self-test slip prints the stored values), so a job that stated
+  nothing printed with the registration the LAST job left: a second stock on the same TDP43ME, recorded with
+  "no offset", inherited the Panduit record's +24 / +9 dots, and the calibration ruler printed "without an
+  offset" read 24 dots off (2026-10-25). A record with an offset sends the same bytes as before; a zero-offset
+  send gains the 10-byte prefix.
+- `Media.same_stock` also requires the same `rotate180` and the same `labels_in`: a self-laminating stock
+  with the Panduit S150X225VATY's page but the die turned round on the web (the white block at the trailing
+  end) is `rotate180: false` with the same areas — the block at the other end of the printer frame — and a
+  job for one lands on the other's clear tail, upside down. The planner now keeps the two apart (a file for
+  one is never held by a printer carrying the other); the block / whole-label variants of one stock stay
+  interchangeable as before. README (the lessons), tests.
+
 ## 0.18.0 — 2026-10-17
 
 - Bookends cover the WHOLE die-cut label when the media knows its outline (`labels_in`) and it is larger than

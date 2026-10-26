@@ -67,14 +67,19 @@ class Media:
         return round(self.length_mm / 25.4 * self.dpi)
 
     def same_stock(self, other: Media) -> bool:
-        """The same physical stock at the same resolution — identical page, identical dots — so a printer loaded
-        with one prints a job written for the other; the two may differ only in where blocks are allowed
-        (e.g. the print-on block vs the whole label of a self-laminating stock)."""
+        """The same physical stock at the same resolution, loaded the same way — identical page, identical dots,
+        the die-cut labels in the same place and the same way up — so a printer loaded with one prints a job
+        written for the other; the two may differ only in where blocks are allowed (e.g. the print-on block vs
+        the whole label of a self-laminating stock). A stock whose die is turned round on the web (the white
+        block at the trailing end instead of the leading one, 2026-10-25) shares the page but not the frame: a
+        job for one prints on the other's clear tail, upside down — never the same stock."""
         return (
             self.dpi == other.dpi
             and abs(self.width_mm - other.width_mm) < 0.01
             and abs(self.length_mm - other.length_mm) < 0.01
             and abs(self.gap_mm - other.gap_mm) < 0.01
+            and self.rotate180 == other.rotate180
+            and self.labels_in == other.labels_in
         )
 
     @property
@@ -130,6 +135,11 @@ def offset_commands(m: Media, offset_in: tuple[float, float]) -> bytes:
     to one machine: x ≥ 0 → ``^R<n>`` (left margin: the print moves right as seen from the front, 0–399, manual
     p.10); y → ``~Q<±n>`` (row offset, + = down the feed, ±100, p.32).
 
+    BOTH are always sent, a zero included: the printer KEEPS ^R / ~Q between jobs (its self-test slip prints
+    the stored values), so a job that sends neither prints with the LAST job's registration — a second stock on
+    the same head with "no offset" inherited the first stock's +24 / +9 dots, and a ruler printed "without an
+    offset" read 24 dots off (2026-10-25). Since 0.19.0 every send, the ruler included, states its own.
+
     ``^XSET,OFFSET`` is deliberately not used: a Panduit TDP43ME (2010-era Godex firmware) ignored it. A negative x
     cannot be expressed by ^R — move the media's areas instead.
     """
@@ -140,9 +150,4 @@ def offset_commands(m: Media, offset_in: tuple[float, float]) -> bytes:
         raise ValueError(
             f"offset {nx:+d}/{ny:+d} dots outside ^R 0–{LEFT_MARGIN_MAX_DOTS} / ~Q ±{OFFSET_MAX_DOTS}"
         )
-    out = bytearray()
-    if nx:
-        out += f"^R{nx}".encode() + EOL
-    if ny:
-        out += f"~Q{ny:+d}".encode() + EOL
-    return bytes(out)
+    return f"^R{nx}".encode() + EOL + f"~Q{ny:+d}".encode() + EOL
