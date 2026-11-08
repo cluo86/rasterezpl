@@ -89,7 +89,7 @@ def _get(url: str):
 @pytest.fixture
 def site(tmp_path):
     reg = tmp_path / "printers.yaml"
-    reg.write_text(REG.format(target=tmp_path / "spool.ezpl"))
+    reg.write_text(REG.format(target=(tmp_path / "spool.ezpl").as_posix()))
     root = tmp_path / "root"
     root.mkdir()
     srv = make_server(root, "127.0.0.1", 0, str(reg))
@@ -145,7 +145,7 @@ def test_compose_api_preview_save_reload_and_print(site):
         },
     )
     assert st == 200 and j2["labels"] == 2
-    assert json.loads((root / j2["spec"]).read_text())["texts"] == ["sw1", "sw2"]
+    assert json.loads((root / j2["spec"]).read_text(encoding="utf-8"))["texts"] == ["sw1", "sw2"]
     # the Easy-Mark import
     proj = {
         "documents": [

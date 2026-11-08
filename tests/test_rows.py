@@ -73,7 +73,7 @@ def test_spec_from_dict_keeps_the_list():
 @pytest.fixture
 def site(tmp_path):
     reg = tmp_path / "printers.yaml"
-    reg.write_text(REG.format(target=tmp_path / "spool.ezpl"))
+    reg.write_text(REG.format(target=(tmp_path / "spool.ezpl").as_posix()))
     root = tmp_path / "root"
     root.mkdir()
     srv = make_server(root, "127.0.0.1", 0, str(reg))
@@ -135,12 +135,12 @@ def test_rows_probe_compose_sidecar_and_recipe_list(site):
         {"media": "tiny", "font": font, "pt": 3, "rows": "1\n2\n3", "header": False, "fit": True},
     )
     assert st == 200 and c3["labels"] == 3
-    assert json.loads((root / c3["spec"]).read_text())["texts"] == ["1", "2", "3"]
+    assert json.loads((root / c3["spec"]).read_text(encoding="utf-8"))["texts"] == ["1", "2", "3"]
 
 
 def test_cli_text_rows(tmp_path, capsys):
     reg = tmp_path / "printers.yaml"
-    reg.write_text(REG.format(target=tmp_path / "spool.ezpl"))
+    reg.write_text(REG.format(target=(tmp_path / "spool.ezpl").as_posix()))
     font = rz.find_font("Arial", "DejaVu Sans")
     if font is None:
         pytest.skip("no font")

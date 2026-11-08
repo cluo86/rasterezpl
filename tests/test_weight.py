@@ -101,7 +101,7 @@ def test_printer_heat_applied_at_send_time(tmp_path, capsys):
     sent = spool.read_bytes()
     assert b"^S2\r^H17\r" in sent and b"^H14" not in sent
     assert b"^S3\r^H14\r" in (root / "t.ezpl").read_bytes()  # the file is untouched
-    entry = json.loads((root / "log.jsonl").read_text().splitlines()[-1])
+    entry = json.loads((root / "log.jsonl").read_text(encoding="utf-8").splitlines()[-1])
     assert "darkness 17" in entry["note"]
     # the CLI: the record's heat by default, --darkness/--speed for one print
     assert main(["--registry", str(reg), "print", str(root / "t.ezpl"), "--printer", "hot"]) == 0

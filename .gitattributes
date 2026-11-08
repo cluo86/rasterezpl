@@ -1,0 +1,7 @@
+# one line ending everywhere: the tests write and read files on three OS, and a checkout on Windows with
+# autocrlf=true would otherwise turn every text fixture and the served page into CRLF
+* text=auto eol=lf
+*.ttf binary
+*.otf binary
+*.png binary
+*.ezpl binary

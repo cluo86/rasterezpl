@@ -1,18 +1,23 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, "dev/**"]
   pull_request:
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # three OS: the tool is used from a Mac or Linux box beside the printer today and from the Windows site laptops
+    # GoLabel / EasyMark live on; the matrix is the cheapest survey of path, line-ending, codec and font issues
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: sudo apt-get install -y fonts-dejavu-core
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y fonts-dejavu-core  # Windows has Arial, macOS has it in Supplemental
       - run: uv python install ${{ matrix.python }}
       - run: uv sync --extra dev --python ${{ matrix.python }}
       - run: uv run ruff check src tests

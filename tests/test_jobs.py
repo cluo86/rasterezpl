@@ -46,7 +46,7 @@ def test_parse_cart():
 def site(tmp_path):
     reg = tmp_path / "printers.yaml"
     t1, t2 = tmp_path / "spool1.ezpl", tmp_path / "spool2.ezpl"
-    reg.write_text(REG.format(target=t1, target2=t2))
+    reg.write_text(REG.format(target=t1.as_posix(), target2=t2.as_posix()))
     r = load(str(reg))
     root = tmp_path / "root"
     root.mkdir()
@@ -77,14 +77,14 @@ def test_plan_ambiguity_format_and_run(site):
     assert rz.count_labels(site["t1"].read_bytes()) == 2 and site["t1"].read_bytes().startswith(
         b"^R10\r~Q-2\r"
     )
-    entries = [json.loads(ln) for ln in log.read_text().splitlines()]
+    entries = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines()]
     assert [(e["printer"], e["count"]) for e in entries] == [("filep", 3), ("filep2", 4)]
     # `to` overrides the transport for every row (a test spool), offset and media still the printer's
     alt = root.parent / "alt.ezpl"
     run(root, reg, rows[:1], log, to=str(alt))
-    assert alt.read_bytes().startswith(b"^R10\r~Q-2\r") and json.loads(log.read_text().splitlines()[-1])[
-        "transport"
-    ] == str(alt)
+    assert alt.read_bytes().startswith(b"^R10\r~Q-2\r") and json.loads(
+        log.read_text(encoding="utf-8").splitlines()[-1]
+    )["transport"] == str(alt)
     # a refused row stops everything
     site["t1"].unlink()
     bad = plan(
@@ -122,7 +122,7 @@ def test_cli_printcart(site, capsys):
     assert main([*argv, "--dry-run", "a.ezpl:1-2"]) == 2  # still refused: ambiguous
     # the CLI takes FILE:LABELS only, the printer comes from the file's media — a one-printer registry
     reg1 = site["regpath"].with_name("one.yaml")
-    reg1.write_text(REG.split("  filep2:")[0].format(target=site["t1"], target2=""))
+    reg1.write_text(REG.split("  filep2:")[0].format(target=site["t1"].as_posix(), target2=""))
     argv1 = ["--registry", str(reg1), "printcart", "--root", str(site["root"])]
     assert main([*argv1, "--dry-run", "a.ezpl:1-2"]) == 0
     out = capsys.readouterr().out
@@ -167,7 +167,7 @@ def test_same_stock_other_dpi_is_not_the_same_media(tmp_path):
     assert listed["printers"] == [] and listed["media"] == ["panduit-s150x225vaty-2up-203"]
     reg_both = tmp_path / "rboth.yaml"
     reg_both.write_text(
-        reg300.read_text()
+        reg300.read_text(encoding="utf-8")
         + f'  p203:\n    transport: "{tmp_path / "s203.ezpl"}"\n    media: panduit-s150x225vaty-2up-203\n'
     )
     rows = plan(root, load(str(reg_both)), [{"file": "j203.ezpl"}])

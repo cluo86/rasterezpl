@@ -75,7 +75,7 @@ def _label(m, k: int):
 def _site(tmp_path, blocks=64):
     reg = tmp_path / "printers.yaml"
     t1, t2 = tmp_path / "spool1.ezpl", tmp_path / "spool2.ezpl"
-    reg.write_text(REG.format(t1=t1, t2=t2))
+    reg.write_text(REG.format(t1=t1.as_posix(), t2=t2.as_posix()))
     r = load(str(reg))
     root = tmp_path / "root"
     root.mkdir()
@@ -208,7 +208,7 @@ def test_plan_stream_log_and_cli_report_the_packed_rows(tmp_path, capsys):
     assert [[decode_block(qs, m).crop(_rect(m, a)).tobytes() for a in (0, 1)] for _s, qs in labels_only][3][
         1
     ] == b"\xff" * (150 * 100)
-    e = json.loads((root / LOG_NAME).read_text().splitlines()[-1])
+    e = json.loads((root / LOG_NAME).read_text(encoding="utf-8").splitlines()[-1])
     assert (e["labels"], e["count"], e["rows"], e["packed"], e["bookends"], e["ok"]) == (
         SEVEN,
         7,
@@ -248,12 +248,12 @@ def test_plan_stream_log_and_cli_report_the_packed_rows(tmp_path, capsys):
     assert "would send 4 blocks to p1 — 7 labels → 4 rows (packed)" in out and not site["t1"].exists()
     assert main(pargs) == 0
     assert rz.count_labels(site["t1"].read_bytes()) == 4
-    e = json.loads((root / LOG_NAME).read_text().splitlines()[-1])
+    e = json.loads((root / LOG_NAME).read_text(encoding="utf-8").splitlines()[-1])
     assert (e["labels"], e["count"], e["rows"], e["packed"]) == (SEVEN, 7, 4, True)
     site["t1"].unlink()
     assert main([*pargs, "--no-pack"]) == 0
     assert rz.count_labels(site["t1"].read_bytes()) == 7
-    e = json.loads((root / LOG_NAME).read_text().splitlines()[-1])
+    e = json.loads((root / LOG_NAME).read_text(encoding="utf-8").splitlines()[-1])
     assert (e["rows"], e["packed"]) == (7, False)
 
 

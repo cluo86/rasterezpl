@@ -53,7 +53,7 @@ TS = "2026-10-16 14:05"
 def site(tmp_path):
     reg = tmp_path / "printers.yaml"
     t = [tmp_path / f"spool{i}.ezpl" for i in (1, 2, 3)]
-    reg.write_text(REG.format(t1=t[0], t2=t[1], t3=t[2]))
+    reg.write_text(REG.format(t1=t[0].as_posix(), t2=t[1].as_posix(), t3=t[2].as_posix()))
     r = load(str(reg))
     root = tmp_path / "root"
     root.mkdir()
@@ -137,14 +137,14 @@ def test_run_sends_n_plus_2_in_order_and_logs_the_flag(site):
     picked = select_labels((root / "a.ezpl").read_bytes(), "3-6", m)
     assert spool[len(b"^R10\r~Q-2\r") + len(blocks[0][0]) :].find(picked) > 0
     assert _ink(blocks[0], m) > 0.25 and _ink(blocks[3], m) > 0.2 and _ink(blocks[1], m) == 0.0
-    entry = json.loads(log.read_text().splitlines()[-1])
+    entry = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
     assert entry["bookends"] is True and entry["count"] == 4 and entry["labels"] == "3-6"
     # the printer's heat retunes the START block = the head of the stream, as it retuned the first label
     rows2 = plan(root, reg, [{"file": "b.ezpl", "printer": "p2"}])
     run(root, reg, rows2, log, bookends=True)
     spool2 = site["t"][1].read_bytes()
     assert spool2.startswith(b"^R0\r~Q+0\r^Q30,2\r^W80\r~R200\r^AT\r^H12\r") and rz.count_labels(spool2) == 4
-    assert json.loads(log.read_text().splitlines()[-1])["bookends"] is True
+    assert json.loads(log.read_text(encoding="utf-8").splitlines()[-1])["bookends"] is True
 
 
 def test_without_the_flag_the_stream_is_byte_identical_to_0_12_1(site):
@@ -156,7 +156,7 @@ def test_without_the_flag_the_stream_is_byte_identical_to_0_12_1(site):
     run(root, reg, rows, log)
     expected = offset_commands(m, (0.1, -0.02)) + select_labels((root / "a.ezpl").read_bytes(), "1-3", m)
     assert site["t"][0].read_bytes() == expected
-    assert json.loads(log.read_text().splitlines()[-1])["bookends"] is False
+    assert json.loads(log.read_text(encoding="utf-8").splitlines()[-1])["bookends"] is False
     assert run(root, reg, rows, log, dry_run=True)[-1] == "dry run — nothing sent"
     site["t"][0].unlink()
     argv = [
@@ -235,7 +235,7 @@ def test_cli_printcart_two_files_two_pairs(site, capsys):
     argv = ["--registry", str(site["regpath"]), "printcart", "--root", str(root), "--bookends"]
     # the CLI picks the printer by media; two printers hold `big` → name them through a one-printer registry each
     reg1 = site["regpath"].with_name("one.yaml")
-    reg1.write_text(REG.split("  p2:")[0].format(t1=site["t"][0], t2="", t3=""))
+    reg1.write_text(REG.split("  p2:")[0].format(t1=site["t"][0].as_posix(), t2="", t3=""))
     argv = ["--registry", str(reg1), "printcart", "--root", str(root), "--bookends"]
     assert main([*argv, "--dry-run", "a.ezpl:1-4", "b.ezpl"]) == 0
     out = capsys.readouterr().out
@@ -248,7 +248,7 @@ def test_cli_printcart_two_files_two_pairs(site, capsys):
     m = site["reg"].media["big"]
     blocks = parse_blocks(site["t"][0].read_bytes())
     assert len(blocks) == 8 and [round(_ink(b, m) > 0.2) for b in blocks] == [1, 0, 0, 1, 1, 0, 0, 1]
-    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text().splitlines()]
+    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text(encoding="utf-8").splitlines()]
     assert [(e["file"], e["count"], e["bookends"], e["ok"]) for e in entries] == [
         ("a.ezpl", 4, True, True),
         ("b.ezpl", 4, True, True),
@@ -287,7 +287,9 @@ def test_api_print_takes_bookends(site):
         assert rz.count_labels(site["t"][0].read_bytes()) == 3  # one label row + START + END
         st, j = post({"jobs": jobs})
         assert j["bookends"] is False and rz.count_labels(site["t"][0].read_bytes()) == 1
-        entries = [json.loads(ln) for ln in (site["root"] / LOG_NAME).read_text().splitlines()]
+        entries = [
+            json.loads(ln) for ln in (site["root"] / LOG_NAME).read_text(encoding="utf-8").splitlines()
+        ]
         assert [e["bookends"] for e in entries] == [True, False]
     finally:
         srv.shutdown()

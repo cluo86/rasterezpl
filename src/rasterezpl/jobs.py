@@ -78,6 +78,9 @@ class PlanRow:
 
 def confine(root: Path, rel: str) -> Path:
     """The job file for a request path — refusing anything outside the root or not a ``.ezpl``."""
+    root = (
+        root.resolve()
+    )  # the caller's root may be unresolved (a short 8.3 name on Windows, a symlinked tmp dir)
     p = (root / rel.lstrip("/")).resolve()
     if root not in p.parents and p != root:
         raise ValueError(f"{rel!r} is outside the served root")

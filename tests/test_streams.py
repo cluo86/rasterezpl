@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import socket
+import struct
+import sys
 import threading
 
 import pytest
@@ -18,6 +20,7 @@ from rasterezpl.registry import load
 from rasterezpl.stream import parse_blocks, select_labels
 
 PIL = pytest.importorskip("PIL")
+LINGER_RST = struct.pack("hh" if sys.platform == "win32" else "ii", 1, 0)  # see test_sends
 
 REG = """
 media:
@@ -54,7 +57,7 @@ def fast_backoff(monkeypatch):
 def _site(tmp_path, port=1, one_printer=False, ink=False):
     reg = tmp_path / "printers.yaml"
     t1 = tmp_path / "spool1.ezpl"
-    text = REG.format(t1=t1, port=port)
+    text = REG.format(t1=t1.as_posix(), port=port)
     reg.write_text(text.split("  tcp:")[0] if one_printer else text)
     r = load(str(reg))
     root = tmp_path / "root"
@@ -113,7 +116,7 @@ def test_one_stream_per_printer_with_the_files_back_to_back(tmp_path):
     notes = run(root, reg, rows, root / LOG_NAME, bookends=True)
     spool = site["t1"].read_bytes()
     assert rz.count_labels(spool) == 140 and len(spool) == st.length
-    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text().splitlines()]
+    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text(encoding="utf-8").splitlines()]
     assert [e["file"] for e in entries] == ["two.ezpl", "b30.ezpl", "b31.ezpl"]
     assert [e["ok"] for e in entries] == [True, True, True]
     assert len({e["stream"]["id"] for e in entries}) == 1
@@ -156,11 +159,11 @@ def test_a_stream_cut_inside_file_two(tmp_path):
                 if not chunk:
                     return
                 got.extend(chunk)
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b"\x01\x00\x00\x00\x00\x00\x00\x00")
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, LINGER_RST)  # RST, not FIN
 
     threading.Thread(target=close_after_k, daemon=True).start()
     notes = run(root, reg, rows, root / LOG_NAME)
-    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text().splitlines()]
+    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text(encoding="utf-8").splitlines()]
     assert [e["file"] for e in entries] == ["two.ezpl", "b30.ezpl", "b31.ezpl"]
     assert [e["ok"] for e in entries] == [True, False, False]
     accepted = entries[0]["bytes_sent"] + entries[1]["bytes_sent"]  # file 1 whole, file 2 up to the cut
@@ -209,7 +212,7 @@ def test_cli_printcart_streams_dry_run_proof_and_exit_code(tmp_path, capsys):
     assert main(argv) == 0
     spool = site["t1"].read_bytes()
     assert rz.count_labels(spool) == 7  # 2 rows + 5 rows, no bookends
-    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text().splitlines()]
+    entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text(encoding="utf-8").splitlines()]
     assert [(e["file"], e["labels"], e["count"], e["ok"]) for e in entries] == [
         ("two.ezpl", "1-4", 4, True),
         ("b30.ezpl", "1-10", 10, True),
@@ -258,7 +261,7 @@ def test_an_old_settle_record_is_ignored_with_a_note(tmp_path, capsys):
     site = _site(tmp_path, one_printer=True)
     reg = site["regpath"]
     reg.write_text(
-        reg.read_text().replace(
+        reg.read_text(encoding="utf-8").replace(
             "    darkness: 12\n", "    darkness: 12\n    settle:\n      per_row_s: 1.5\n      floor_s: 10\n"
         )
     )

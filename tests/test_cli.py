@@ -34,7 +34,7 @@ printers:
 def test_registry_text_print_decode(tmp_path, capsys):
     target = tmp_path / "spool.ezpl"
     reg = tmp_path / "printers.yaml"
-    reg.write_text(REG.format(target=target))
+    reg.write_text(REG.format(target=target.as_posix()))
     font = rz.find_font("Arial", "DejaVu Sans")
     if font is None:
         pytest.skip("no font")

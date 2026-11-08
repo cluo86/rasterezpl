@@ -56,7 +56,7 @@ def _post(url: str, doc: dict):
 def site(tmp_path):
     reg = tmp_path / "printers.yaml"
     tiny_target, pand_target = tmp_path / "spool-tiny.ezpl", tmp_path / "spool-pand.ezpl"
-    reg.write_text(REG.format(tiny_target=tiny_target, pand_target=pand_target))
+    reg.write_text(REG.format(tiny_target=tiny_target.as_posix(), pand_target=pand_target.as_posix()))
     r = load(str(reg))
     root = tmp_path / "root"
     (root / "jobs").mkdir(parents=True)
@@ -142,7 +142,7 @@ def test_print_dry_run_refused_and_real(site):
     assert spool.startswith(b"^R10\r~Q-2\r") and rz.count_labels(spool) == 2
     assert rz.count_labels(site["pand"].read_bytes()) == 1
     log = site["root"] / LOG_NAME
-    entries = [json.loads(ln) for ln in log.read_text().splitlines()]
+    entries = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines()]
     assert [e["file"] for e in entries] == ["jobs/a.ezpl", "other.ezpl"] and entries[0]["printer"] == "filep"
     st, _, body = _get(f"{b}/api/log?n=10")
     assert [e["count"] for e in json.loads(body)] == [3, 2]

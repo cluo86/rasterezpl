@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import re
 import socket
+import struct
+import sys
 import threading
 import time
 
@@ -21,6 +23,8 @@ from rasterezpl.stream import select_labels
 from rasterezpl.transport import TCP_CHUNK, SendError, send_tcp
 
 PIL = pytest.importorskip("PIL")
+# SO_LINGER {on, 0 s}: close with a RST, as the printer's board does. Two shorts on Windows, two ints elsewhere.
+LINGER_RST = struct.pack("hh" if sys.platform == "win32" else "ii", 1, 0)
 
 REG = """
 media:
@@ -85,9 +89,7 @@ def test_connection_closed_after_k_bytes_names_the_bytes_and_logs_them(tmp_path)
             if not chunk:
                 return
             got.extend(chunk)
-        conn.setsockopt(
-            socket.SOL_SOCKET, socket.SO_LINGER, b"\x01\x00\x00\x00\x00\x00\x00\x00"
-        )  # RST, not FIN
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, LINGER_RST)  # RST, not FIN
 
     srv, port = _port_server(close_after_k)
     data = b"x" * (TCP_CHUNK * 128)  # 8 MB: beyond any loopback socket buffer, so the cut is seen
@@ -112,7 +114,7 @@ def test_connection_closed_after_k_bytes_names_the_bytes_and_logs_them(tmp_path)
         printer="p",
         media=None,
     )
-    entry = json.loads(log.read_text().splitlines()[-1])
+    entry = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
     assert ok is False and entry["ok"] is False and entry["bytes_sent"] >= K
     assert (
         entry["error"].endswith(
@@ -190,7 +192,7 @@ def test_a_refused_port_is_waited_on_not_failed():
 def site(tmp_path):
     reg = tmp_path / "printers.yaml"
     t1, t2 = tmp_path / "spool1.ezpl", tmp_path / "spool2.ezpl"
-    reg.write_text(REG.format(t1=t1, t2=t2))
+    reg.write_text(REG.format(t1=t1.as_posix(), t2=t2.as_posix()))
     r = load(str(reg))
     root = tmp_path / "root"
     root.mkdir()
@@ -218,13 +220,13 @@ def test_print_writes_a_log_line_beside_the_job(site, capsys):
     out = capsys.readouterr().out
     log = root / LOG_NAME
     assert f"logged in {log}" in out and log.exists()
-    e = json.loads(log.read_text().splitlines()[-1])
+    e = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
     assert [e[k] for k in ("file", "labels", "count", "printer", "transport", "bookends", "ok")] == [
         str(root / "a.ezpl"),
         "1-3",
         3,
         "filep",
-        str(site["t1"]),
+        site["t1"].as_posix(),  # the transport as the registry YAML spelled it
         False,
         True,
     ]
@@ -246,7 +248,7 @@ def test_print_writes_a_log_line_beside_the_job(site, capsys):
         )
         == 0
     )
-    assert json.loads(other.read_text().splitlines()[-1])["labels"] == "1-4"
+    assert json.loads(other.read_text(encoding="utf-8").splitlines()[-1])["labels"] == "1-4"
     # a failed send: exit 1, logged with ok false, the note names what is (not) on the paper
     bad = root / "sub"  # a spool path whose parent is a FILE → the write fails
     bad.write_text("x")
@@ -265,7 +267,7 @@ def test_print_writes_a_log_line_beside_the_job(site, capsys):
         ]
     )
     assert rc == 1
-    e = json.loads(other.read_text().splitlines()[-1])
+    e = json.loads(other.read_text(encoding="utf-8").splitlines()[-1])
     assert (
         e["ok"] is False
         and e["bytes_sent"] == 0
