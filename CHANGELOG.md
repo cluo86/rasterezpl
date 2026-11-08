@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.23.0 — 2026-11-08
+
+- `rasterezpl import FILE.ezpx|FILE.pemx [--data rows.csv|.xlsx] [--media M] [--font FACE] [--partial] -o job.ezpl
+  [--proof F.pdf|F.png]`: a label project designed in GoLabel (Godex) or Easy-Mark Plus (Panduit) rendered by
+  this engine into an ordinary job — the site's existing design prints through the plan, the guards and the
+  log, and a proof shows what our engine makes of their layout. Every summary and proof caption ends with "our
+  rendering of this layout — GoLabel/EasyMark render with their own engine; wraps and clipping may differ"; it
+  is not an emulator and never claims equivalence. Nothing is dropped silently: a face this machine lacks is a
+  refusal unless `--font` names the substitute (then the summary says so); a box whose rectangle leaves the
+  label (GoLabel prints nothing for it), a shape that is not a text box, and a field bound to a column the data
+  lacks are refusals unless `--partial` leaves them out, each listed under LEFT OUT; wraps and clips are named
+  per box. `.ezpx`: label size / gap / dpi / across from `Setup`, each `WindowTextBox` rectangle, face, size,
+  line height, alignment and `Angle180` (text turned round inside its box), `Data` with `^F0n` = the ZERO-BASED
+  column n of the data (GoLabel binds by position, never header), `DispData` for a one-label look without data,
+  `Copy` / `CopyField` (read, never rewritten); the workbook path in the file is never opened — rows come from
+  `--data` (CSV, or `.xlsx` with the new `xlsx` extra, openpyxl). `.pemx`: part, print-on label, columns, series
+  texts with face and size, wire mode (a short text repeated down the area, as Easy-Mark does). The media:
+  named, or the one on record that fits the design's label (±1 mm), or — GoLabel, one across — derived from
+  the design with the YAML to put it on record printed in the summary. Library: `read_ezpx`, `read_pemx`,
+  `media_for_ezpx`, `media_for_pemx`, `render_ezpx`, `render_pemx`, `import_design`, `Imported`, `DISCLAIMER`.
+  Fifteen tests on synthetic files (a site's project is its own and never enters this repo), one of them the
+  rendering's hash — the CI matrix checks the imported labels too are the same on every machine.
+- Lesson: a real template, tried locally, bound `^F06` while its workbook's first sheet has six columns — what
+  GoLabel prints for a field with no column is unknown (nothing, probably), so the importer refuses and names
+  the column rather than guess, and `--partial` prints it blank and says so. The same template had three boxes
+  nudged off the label edge by hand; the proof of what remains looked like the flag it is. And the design frame
+  of a GoLabel file IS the physical frame of our media (top-left of the label as the designer saw it, an
+  `Angle180` box anchored at its bottom-right corner) — no transform, which is why the coordinates can be
+  trusted one to one.
+
 ## 0.22.0 — 2026-11-08
 
 - A fake printer: `rasterezpl fakeprinter`, `rasterezpl.FakePrinter`, the `fake_printer` pytest fixture. The

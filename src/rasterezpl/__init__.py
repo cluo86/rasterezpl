@@ -1,11 +1,26 @@
 """rasterezpl — print any bitmap to Godex-language (EZPL) label printers, driverless, from macOS, Linux or Windows."""
 
-__version__ = "0.22.0"
+__version__ = "0.23.0"
 
 from .bookends import bookend_blocks, bookend_image, with_bookends
 from .calibrate import ruler_job, ruler_page
 from .compose import Spec, compose, import_pemx, parse_rows, parse_text
 from .fakeprinter import NETPS, PROFILES, FakePrinter, Profile
+from .importers import (
+    DISCLAIMER,
+    Box,
+    EzpxDesign,
+    Imported,
+    PemxDesign,
+    import_design,
+    media_for_ezpx,
+    media_for_pemx,
+    read_ezpx,
+    read_pemx,
+    read_table,
+    render_ezpx,
+    render_pemx,
+)
 from .jobs import (
     Part,
     PlanRow,
@@ -67,6 +82,19 @@ from .transport import (
 
 __all__ = [
     "EOL",
+    "DISCLAIMER",
+    "Box",
+    "EzpxDesign",
+    "Imported",
+    "PemxDesign",
+    "import_design",
+    "media_for_ezpx",
+    "media_for_pemx",
+    "read_ezpx",
+    "read_pemx",
+    "read_table",
+    "render_ezpx",
+    "render_pemx",
     "FakePrinter",
     "LEFT_MARGIN_MAX_DOTS",
     "NETPS",

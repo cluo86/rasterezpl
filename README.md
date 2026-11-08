@@ -27,6 +27,7 @@ the printer it is the same labels, rendered once, with the guards and the log th
 pip install rasterezpl            # library + CLI
 pip install "rasterezpl[usb]"     # + pyusb for --to usb: (needs libusb: brew install libusb)
 pip install "rasterezpl[windows]" # + pywin32 for --to win:<queue> — a Windows print queue, RAW through the spooler
+pip install "rasterezpl[xlsx]"    # + openpyxl: `import design.ezpx --data rows.xlsx` (a .csv needs nothing)
 ```
 
 ## Five minutes with a Panduit TDP43ME on a Mac
@@ -349,6 +350,61 @@ list, preview, print. The same from the command line: `rasterezpl text --rows li
 --layout barcode-below --qr "{rack}" …`. Nothing here is a drawing tool: the input is a list and a named layout,
 the output is the exact raster, and the same recipe on the same list prints the same labels next month.
 
+## Import a GoLabel or Easy-Mark project
+
+A site already has its labels designed — in GoLabel (Godex, `.ezpx`) or Easy-Mark Plus (Panduit, `.pemx`), on
+the Windows laptop by the printer. `rasterezpl import` renders that design with THIS engine into an ordinary
+job, so it prints through the same plan, guards and log as everything else, and a proof shows what our engine
+makes of their layout:
+
+```
+rasterezpl import Labels.ezpx --data cutsheet.xlsx -o labels.ezpl --proof labels.pdf
+rasterezpl import labels-6202-U19.pemx --media panduit-s150x225vaty-2up -o u19.ezpl --proof u19.png
+rasterezpl print labels.ezpl --to tcp://192.168.1.50 --media godex-92x34-flags --dry-run --proof check.pdf
+```
+
+Every import ends its summary — and the proof's caption — with the same sentence: *our rendering of this
+layout — GoLabel/EasyMark render with their own engine; wraps and clipping may differ*. It is not an emulator.
+Both programs lay text out with the Windows font engine and their own wrapping; this one lays it out with
+FreeType's basic engine, the same on every machine, and says what it did. Nothing a file asks for is dropped
+silently:
+
+- **A face not on this machine is a refusal**, unless `--font Inter` (or any face you have) names the
+  substitute — and then the summary says *face 'Microsoft YaHei UI' 8 pt is NOT on this machine → substituted
+  'Inter', as asked*. A face that is here is used, and the summary names the file.
+- **A box whose rectangle leaves the label is a refusal.** GoLabel prints nothing for such a box (a real
+  template had three of them, nudged off the edge by hand); the importer names each one — *box 13 ('^F02',
+  preview '58ft') at x 558–797 leaves the label (735 × 272 dots)* — and stops. `--partial` leaves them out as
+  GoLabel does, listed under *LEFT OUT*. The same for a shape that is not a text box (a barcode, a line) and,
+  with `--data`, for a field bound to a column the sheet does not have.
+- **Wraps and clips are reported**, never silent: a line wider than its box is wrapped by words (`.ezpx`) or
+  by character (`.pemx`, as Easy-Mark does) and the summary says which box; text that still does not fit is
+  clipped to its box and the summary says so.
+
+What is read from a `.ezpx`: the label (`LabelWidth` × `LabelLength`, gap, dpi, labels across), each text
+box's rectangle, face and size, line height, alignment, and `Direction` (`Angle180` = the text turned round
+inside its rectangle: the back half of a wrap-around flag), `Data` with its `^F0n` fields and `DispData` (the
+preview text saved with the design — without `--data` you get ONE label of those, for a look). **`^F00` is the
+FIRST column of the data, `^F01` the second**: GoLabel binds a field to a column's position, never its header,
+so reordering the sheet's columns silently changes what prints — the importer binds the same way and says
+*header row dropped (A End, B End, …); ^F00 = the first column*. The workbook path saved in the design is a
+path on the designer's laptop and is never opened; the rows come from `--data` as `.csv`/`.tsv`, or `.xlsx`
+with the `xlsx` extra (`--sheet` by name; default the sheet the design names, else the first). `Copy` is the
+copies per label, or the `CopyField` column when the design says so (`bCopyDataBase`) — read, never rewritten
+(rewriting it once crashed GoLabel's own setup dialog). The media: `--media` names one from the registry (its
+print areas must be the design's label, ±1 mm), else the one on record that fits is taken, else — one across —
+the job is written for a media derived from the design and the summary prints the YAML to put it on record.
+
+What is read from a `.pemx`: the part (`S150X225VATY`), the print-on label size, the labels across, every
+series' texts with their face and point size, and *wire mode*, in which Easy-Mark repeats a short text down
+the print-on area — the importer repeats it too, and says the count may differ. The media is the one on record
+whose name carries the part and whose print area is the label; the file does not know the printer's dpi, so
+with the stock on record at two resolutions you name one.
+
+The library has the same in parts: `read_ezpx` / `read_pemx` (the design, as data), `media_for_ezpx` /
+`media_for_pemx`, `render_ezpx` / `render_pemx` → an `Imported` (the job, the media, the count, the notes), and
+`import_design(path, registry, …)` for the whole thing.
+
 ## Library
 
 ```python
@@ -372,8 +428,10 @@ release with that version's CHANGELOG section as the notes.
 
 Alpha. Verified on a Panduit TDP43ME (300 dpi, Panduit S150X225VATY two-across) and a Godex G500 (203 dpi,
 92 × 34 mm flag stock) over USB from macOS 26, and over the NetPS Ethernet board from macOS. The Windows port
-(0.20.0) passes the suite on Windows in CI and its `win:` transport is tested against a recorded fake of the
-spooler API; a real print from a Windows laptop over `tcp://` and `win:` is the gate still open. Reports from
+(0.20.0) passes the suite on Windows in CI and on a Windows 11 machine, and its `win:` transport is tested
+against a recorded fake of the spooler API; a real print from a Windows laptop over `tcp://` and `win:` is the
+gate still open. The GoLabel / Easy-Mark importer (0.23.0) is tested on synthetic files and tried on one real
+GoLabel template; what it renders has not yet been printed beside GoLabel's own output. Reports from
 other EZPL printers and stocks are welcome.
 
 MIT licence.

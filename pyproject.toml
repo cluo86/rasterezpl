@@ -1,6 +1,6 @@
 [project]
 name = "rasterezpl"
-version = "0.22.0"
+version = "0.23.0"
 description = "Print any bitmap to Godex-language (EZPL) thermal label printers — Godex, Panduit TDP series — from macOS, Linux or Windows, no driver"
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,6 +29,7 @@ dependencies = [
 svg = ["cairosvg>=2.7"]  # SVG pictures on labels (or install librsvg for rsvg-convert)
 usb = ["pyusb>=1.2"]  # `--to usb:` — writes to the USB printer-class device itself (macOS 26 has no raw CUPS queues)
 windows = ["pywin32>=306; sys_platform == 'win32'"]  # `--to win:<queue>` — RAW through the Windows spooler (no WinUSB swap needed)
+xlsx = ["openpyxl>=3.1"]  # `import FILE.ezpx --data rows.xlsx` — the workbook a GoLabel design binds to (CSV needs nothing)
 build = ["pyinstaller>=6.0"]  # the one-folder executable (packaging/rasterezpl.spec, the release workflow)
 dev = [
     "pytest>=8.0",
@@ -37,6 +38,7 @@ dev = [
     "mypy>=1.8",
     "types-PyYAML",
     "zxing-cpp>=2.2",  # the barcode round-trip test
+    "openpyxl>=3.1",  # the importer's .xlsx test
 ]
 
 [project.scripts]

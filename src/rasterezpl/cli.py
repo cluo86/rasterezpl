@@ -127,6 +127,44 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument("--media", required=True)
     q.add_argument("-o", "--out", required=True)
 
+    q = sub.add_parser(
+        "import",
+        help="a GoLabel .ezpx or Easy-Mark Plus .pemx project → a job file rendered by THIS engine (+ a proof)",
+    )
+    q.add_argument("file", help="the .ezpx (GoLabel) or .pemx (Easy-Mark Plus) project")
+    q.add_argument(
+        "--media",
+        help="a registry media whose print areas are the design's label (default: the one on record that is, "
+        "else — GoLabel, one across — a media derived from the design)",
+    )
+    q.add_argument(
+        "--data",
+        help="GoLabel: the rows — .csv / .tsv, or .xlsx with the xlsx extra; ^F00 = the first column, ^F01 the second",
+    )
+    q.add_argument(
+        "--sheet", help="with --data .xlsx: the sheet (default: the one the design names, else the first)"
+    )
+    hg = q.add_mutually_exclusive_group()
+    hg.add_argument(
+        "--header",
+        dest="header",
+        action="store_true",
+        default=None,
+        help="the data's first row names the columns and is skipped (default: as the design says)",
+    )
+    hg.add_argument("--no-header", dest="header", action="store_false", help="the data has no header row")
+    q.add_argument(
+        "--font",
+        help="the face to use for a face this machine lacks — said in the summary; never substituted silently",
+    )
+    q.add_argument(
+        "--partial",
+        action="store_true",
+        help="leave out what cannot be drawn (a box off the label, a shape that is not text) instead of refusing",
+    )
+    q.add_argument("-o", "--out", required=True, help="the job file to write")
+    q.add_argument("--proof", help="also write a proof: .pdf (one page per web row, true scale) or .png")
+
     q = sub.add_parser("print", help="send a job")
     q.add_argument("file")
     target_args(q)
@@ -496,6 +534,41 @@ def main(argv: list[str] | None = None) -> int:
         data = job(m, [imgs[i : i + per] for i in range(0, len(imgs), per)])
         Path(args.out).write_bytes(data)
         print(f"wrote {args.out}: {len(imgs)} labels in {count_labels(data)} blocks for {m.name}")
+        return 0
+
+    if args.cmd == "import":
+        from .importers import DISCLAIMER, import_design
+
+        try:
+            imp = import_design(
+                Path(args.file),
+                reg,
+                media=args.media,
+                data=Path(args.data) if args.data else None,
+                sheet=args.sheet,
+                header=args.header,
+                substitute=args.font,
+                partial=args.partial,
+            )
+        except (ValueError, RuntimeError, OSError) as e:
+            sys.exit(f"import: {e}")
+        for note in imp.notes:
+            print(note)
+        Path(args.out).write_bytes(imp.data)
+        print(
+            f"wrote {args.out}: {imp.labels} labels in {imp.blocks} blocks for {imp.media_name or imp.media.name} — from {imp.source}"
+        )
+        if args.proof:
+            from .proof import proof_document
+
+            whose = "GoLabel" if imp.source.startswith("GoLabel") else "Easy-Mark"
+            n_rows = proof_document(
+                imp.media,
+                imp.data,
+                args.proof,
+                caption=f"{Path(args.file).name} — our rendering, not {whose}'s",
+            )
+            print(f"wrote {args.proof}: {n_rows} web row{'s' if n_rows != 1 else ''} — {DISCLAIMER}")
         return 0
 
     if args.cmd == "print":
