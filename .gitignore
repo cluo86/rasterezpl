@@ -10,3 +10,6 @@ build/
 *.ezpl
 *.png
 !docs/*.png
+packaging/build/
+packaging/dist/
+*.zip

@@ -1,0 +1,110 @@
+name: release
+# The one-folder Windows executable for a laptop without Python: built on windows-latest, smoke-tested (the demo,
+# a dry run with its proof, the ruler, a packed cart to the file spool, decode, the queues through pywin32), and its
+# rendering compared byte for byte with the source tree's on Linux (the fingerprint of .github/scripts) — the
+# one-rendering promise across OS. On a tag v<version> the zip is attached to the GitHub release. The build also runs
+# on a dev/** branch push that touches the packaging, and by hand.
+on:
+  push:
+    tags: ["v*"]
+    branches: ["dev/**"]
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/scripts/**"
+      - "packaging/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+jobs:
+  source-fingerprint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --extra dev --python 3.12
+      - run: uv run python .github/scripts/fingerprint.py fingerprint.txt -- uv run rasterezpl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fingerprint-source-linux
+          path: fingerprint.txt
+  windows-exe:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - run: uv sync --extra windows --extra build --python 3.12
+      - run: uv run pyinstaller --noconfirm --clean --distpath dist --workpath build packaging/rasterezpl.spec
+      - id: ver
+        run: |
+          V=$(dist/rasterezpl/rasterezpl.exe --version | sed 's/^rasterezpl //')
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "built rasterezpl $V"
+          case "$GITHUB_REF" in
+            refs/tags/v*) [ "v$V" = "${GITHUB_REF#refs/tags/}" ] || { echo "tag ${GITHUB_REF#refs/tags/} but the package says $V"; exit 1; } ;;
+          esac
+      - name: smoke test — the demo, a dry run with proof, the ruler, a packed cart, decode, the Windows queues
+        run: |
+          set -x
+          EXE=dist/rasterezpl/rasterezpl.exe
+          D="$RUNNER_TEMP/demo"
+          $EXE demo "$D" --no-serve
+          $EXE --registry "$D/printers.yaml" printers
+          $EXE --registry "$D/printers.yaml" media
+          $EXE --registry "$D/printers.yaml" print "$D/templates/layouts.ezpl" --printer demo-panduit --labels 1-3 --dry-run --proof "$RUNNER_TEMP/proof.pdf" --bookends
+          $EXE --registry "$D/printers.yaml" ruler --printer demo-panduit --to "$RUNNER_TEMP/ruler.ezpl"
+          $EXE --registry "$D/printers.yaml" printcart --root "$D" templates/layouts.ezpl:1-4,7 patterns/checker.ezpl --bookends
+          $EXE --registry "$D/printers.yaml" decode "$D/spool/demo-panduit.ezpl" -o "$RUNNER_TEMP/spool.png"
+          $EXE queues
+          $EXE status --to "win:Microsoft Print to PDF" && exit 1 || echo "(never 00 over a queue: a refusal, as intended)"
+          test -s "$RUNNER_TEMP/proof.pdf" && test -s "$RUNNER_TEMP/spool-1.png"
+      - run: uv run python .github/scripts/fingerprint.py fingerprint.txt -- dist/rasterezpl/rasterezpl.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fingerprint-exe-windows
+          path: fingerprint.txt
+      - run: |
+          cp README.md CHANGELOG.md LICENSE printers.example.yaml dist/rasterezpl/
+          cd dist && 7z a "../rasterezpl-${{ steps.ver.outputs.version }}-windows-x64.zip" rasterezpl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rasterezpl-windows-x64
+          path: rasterezpl-*-windows-x64.zip
+  compare:
+    # the executable on Windows renders byte for byte what the source tree renders on Linux
+    needs: [source-fingerprint, windows-exe]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fingerprint-*
+          path: fps
+      - run: |
+          cat fps/fingerprint-source-linux/fingerprint.txt
+          diff fps/fingerprint-source-linux/fingerprint.txt fps/fingerprint-exe-windows/fingerprint.txt && echo "identical: source on Linux == executable on Windows"
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [compare, windows-exe]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rasterezpl-windows-x64
+      - name: release notes = this version's CHANGELOG section
+        run: |
+          V="${{ needs.windows-exe.outputs.version }}"
+          awk -v v="$V" '/^## /{p = index($0, "## " v " ") == 1 || $0 == "## " v} p' CHANGELOG.md > notes.md
+          test -s notes.md || echo "rasterezpl $V" > notes.md
+          cat notes.md
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ needs.windows-exe.outputs.version }}"
+          gh release create "v$V" rasterezpl-*-windows-x64.zip --title "rasterezpl $V" --notes-file notes.md

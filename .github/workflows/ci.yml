@@ -24,3 +24,27 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run mypy src
       - run: uv run pytest -q
+      # the one-rendering promise, checked by machine: the jobs the demo composes from the BUNDLED faces and a packed
+      # cart to the file spool are hashed here on every OS, and the `compare` job demands one answer
+      - run: uv run python .github/scripts/fingerprint.py fingerprint.txt -- uv run rasterezpl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fingerprint-${{ matrix.os }}-${{ matrix.python }}
+          path: fingerprint.txt
+  compare:
+    # every OS and Python of the matrix rendered the same bytes — the raster depends on the recipe, not the machine
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fingerprint-*
+          path: fps
+      - run: |
+          for f in fps/*/fingerprint.txt; do echo "== $f"; cat "$f"; done
+          python3 -c "
+          import pathlib, sys
+          fps = {p.parent.name: p.read_text() for p in pathlib.Path('fps').rglob('fingerprint.txt')}
+          distinct = set(fps.values())
+          print(len(fps), 'fingerprints,', len(distinct), 'distinct')
+          sys.exit(0 if len(distinct) == 1 and fps else 1)"

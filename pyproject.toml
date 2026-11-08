@@ -29,6 +29,7 @@ dependencies = [
 svg = ["cairosvg>=2.7"]  # SVG pictures on labels (or install librsvg for rsvg-convert)
 usb = ["pyusb>=1.2"]  # `--to usb:` — writes to the USB printer-class device itself (macOS 26 has no raw CUPS queues)
 windows = ["pywin32>=306; sys_platform == 'win32'"]  # `--to win:<queue>` — RAW through the Windows spooler (no WinUSB swap needed)
+build = ["pyinstaller>=6.0"]  # the one-folder executable (packaging/rasterezpl.spec, the release workflow)
 dev = [
     "pytest>=8.0",
     "pytest-github-actions-annotate-failures>=0.2",  # a failing test on CI becomes an annotation on the run (file, line, message) — readable without the job log
