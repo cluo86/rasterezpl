@@ -373,7 +373,9 @@ def read_table(path: Path, sheet: str | None = None) -> tuple[list[list[str]], s
         first = text.split("\n", 1)[0]
         rows = [list(r) for r in csv.reader(io.StringIO(text), delimiter=sniff_delimiter(first))]
         used = None
-    rows = [r for r in rows if any(c.strip() for c in r)]  # a blank row is not a label (a sheet's gap, a CRLF twice)
+    rows = [
+        r for r in rows if any(c.strip() for c in r)
+    ]  # a blank row is not a label (a sheet's gap, a CRLF twice)
     return rows, used
 
 
