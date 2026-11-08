@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .media import Media, offset_commands
-from .registry import Registry
+from .registry import Registry, format_bytes
 from .stream import (
     blocks_outside_areas,
     count_labels,
@@ -413,6 +413,16 @@ class Stream:
     parts: list[Part]
     prefix: bytes = b""
     id: str = ""
+    index: int = 1  # this stream's place among the printer's streams of this cart (0.24.0: the byte budget)
+    total: int = 1
+    budget: int | None = None  # the printer's max_stream_bytes the split was made at, None = unbounded
+
+    @property
+    def where(self) -> str:
+        """``→ tdp43me (2 of 3, budget 5 MB)`` — the printer, and the stream's place when the cart was split."""
+        if self.total > 1:
+            return f"→ {self.printer} ({self.index} of {self.total}, budget {format_bytes(self.budget or 0)})"
+        return f"→ {self.printer}" + (f" (budget {format_bytes(self.budget)})" if self.budget else "")
 
     @property
     def data(self) -> bytes:
@@ -464,17 +474,50 @@ def compose_streams(
             if bookends:
                 data = bookended(m, data, r, pr)
             parts.append(Part(r, data, per=m.labels_per_block, packed=packed))
-        if pr.darkness is not None or pr.speed is not None:
-            parts[0].data = retune(parts[0].data, pr.darkness, pr.speed)
         prefix = offset_commands(
             pr.media, pr.offset_in
         )  # a zero too (0.19.0): the printer keeps the last one
-        off = len(prefix)
-        for p in parts:
-            p.offset, p.rows = off, count_labels(p.data)
-            off += p.length
-        out.append(Stream(name, pr.media, parts, prefix, uuid.uuid4().hex[:8]))
+        groups = _split_at_budget(parts, len(prefix), pr)
+        for k, grp in enumerate(groups, start=1):
+            off = len(prefix)
+            for p in grp:
+                p.offset, p.rows = off, count_labels(p.data)
+                off += p.length
+            out.append(
+                Stream(name, pr.media, grp, prefix, uuid.uuid4().hex[:8], k, len(groups), pr.max_stream_bytes)
+            )
     return out
+
+
+def _split_at_budget(parts: list[Part], prefix_len: int, pr) -> list[list[Part]]:
+    """The printer's parts in cart order, cut into consecutive streams of at most ``pr.max_stream_bytes`` each
+    (prefix counted); the first part of every stream is retuned to the printer's darkness / speed, as a single
+    job's would be — without a budget this is the one stream of 0.16.0, byte for byte. A part that is over the
+    budget alone is an error: the entry's selection has to be split."""
+    budget = pr.max_stream_bytes
+    tune = pr.darkness is not None or pr.speed is not None
+    groups: list[list[Part]] = []
+    cur: list[Part] = []
+    size = 0
+    for p in parts:
+        data = retune(p.data, pr.darkness, pr.speed) if tune and not cur else p.data
+        if budget is not None and cur and size + len(data) > budget:  # this part opens the next stream
+            groups.append(cur)
+            cur, size = [], 0
+            data = retune(p.data, pr.darkness, pr.speed) if tune else p.data
+        if budget is not None and prefix_len + len(data) > budget:
+            raise ValueError(
+                f"{p.row.file} labels {p.row.labels}: {prefix_len + len(data):,} bytes alone, over {pr.name}'s "
+                f"budget of {format_bytes(budget)} (max_stream_bytes) — give this file as two cart entries with "
+                f"fewer labels each"
+            )
+        if not cur:
+            p.data, size = data, prefix_len
+        cur.append(p)
+        size += len(data)
+    if cur:
+        groups.append(cur)
+    return groups
 
 
 def _rows_of(p: Part, bookends: bool) -> str:
@@ -490,7 +533,7 @@ def describe_stream(st: Stream, bookends: bool) -> str:
     n = len(st.parts)
     files = " · ".join(f"{p.row.file} labels {p.row.labels} ({_rows_of(p, bookends)})" for p in st.parts)
     return (
-        f"stream {st.id} → {st.printer}: {n} file{'s' if n != 1 else ''}, {st.blocks} blocks"
+        f"stream {st.id} {st.where}: {n} file{'s' if n != 1 else ''}, {st.blocks} blocks"
         + (f" ({2 * n} bookends)" if bookends else "")
         + f", {st.length:,} bytes — {files}"
     )
@@ -541,6 +584,7 @@ def run(
     bookends: bool = False,
     proof: str | Path | None = None,
     pack: bool = True,
+    all_streams: bool = False,
 ) -> list[str]:
     """Send a clean plan as ONE stream per printer (:func:`compose_streams`) — nothing while any row is refused.
     Notes: one per stream, then one per file with its verdict. EVERY file is logged (:func:`append_log`),
@@ -550,7 +594,11 @@ def run(
     selection into full web rows (:func:`compose_streams`). ``proof`` writes the composed stream(s) as
     a proof document (one file per printer when there are several). A cut stream: the files wholly before the
     cut are ok, the one in flight is logged with the web row the cut fell in and the resume range, the files
-    after it are logged as not sent; nothing is ever resent here."""
+    after it are logged as not sent; nothing is ever resent here. A printer with a ``max_stream_bytes`` budget
+    gets its cart in several streams: the FIRST goes, the rest are HELD (rows ``sent`` False, ``error``
+    ``held: …``, logged so) with the command to send them — the END label of the stream before is the gate, in
+    the operator's hand, not the sender's clock — unless ``all_streams`` sends them in turn, each waiting for
+    the port as every stream does."""
     if any(r.refused for r in rows):
         return ["REFUSED rows in the plan — nothing sent (fix the cart and run again)"]
     streams = compose_streams(root, reg, rows, bookends, pack)
@@ -570,6 +618,42 @@ def run(
         pr = reg.printers[st.printer]
         target = to or pr.transport
         ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+        if st.index > 1 and not all_streams:
+            entries = " ".join(f"{p.row.file}:{p.row.labels}" for p in st.parts)
+            held = (
+                f"held: stream {st.index} of {st.total} for {pr.name} (budget {format_bytes(st.budget or 0)}) — "
+                f"the END label of stream {st.index - 1} is the gate"
+            )
+            notes.append(
+                f"stream {st.id} {st.where}: HELD — when the END label of stream {st.index - 1} is in your hand: "
+                f"rasterezpl printcart --root {root} {entries}{' --bookends' if bookends else ''} "
+                f"(or --all-streams to send every stream in turn)"
+            )
+            for p in st.parts:
+                r = p.row
+                r.sent, r.error = False, held
+                r.stream = {"id": st.id, "offset": p.offset, "length": p.length}
+                append_log(
+                    log,
+                    {
+                        "ts": ts,
+                        "file": r.file,
+                        "labels": r.labels,
+                        "count": r.count,
+                        "printer": pr.name,
+                        "transport": target,
+                        "note": f"held (stream {st.index} of {st.total})",
+                        "bookends": bookends,
+                        "ok": False,
+                        "error": held,
+                        "bytes_sent": 0,
+                        "stream": r.stream,
+                        "rows": p.rows - 2 if bookends else p.rows,
+                        "packed": p.packed,
+                    },
+                )
+                notes.append(f"{r.file} labels {r.labels} → HELD (stream {st.index} of {st.total})")
+            continue
         try:
             note, accepted = deliver(st.data, target)
             failure = None
@@ -583,7 +667,7 @@ def run(
             sp = pr.speed if pr.speed is not None else "file"
             heat = f"; darkness {dk}, speed {sp}"
             note += f" ({heat[2:]})"
-        notes.append(f"stream {st.id} → {st.printer}: {note}")
+        notes.append(f"stream {st.id} {st.where}: {note}")
         for p in st.parts:
             r = p.row
             entry: dict[str, Any] = {

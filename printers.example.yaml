@@ -21,6 +21,9 @@ printers:
     media: panduit-s150x225vaty-2up     # preset
     offset_in: [0.0, 0.0]               # from the ruler print: x >= 0 (^R), y +/- (~Q), inches
     note: "not calibrated yet"
+    max_stream_bytes: 5 MB              # a cart is sent in streams of at most this (the NetPS board took 5 MB
+                                        # streams and cut a 19.8 MB one); the first goes, the rest wait for
+                                        # the END label — `printcart --all-streams` sends them in turn
   g500:
     transport: "usb:G500"
     media: godex-92x34

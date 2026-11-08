@@ -71,7 +71,7 @@ ENDPOINTS: list[tuple[str, str, str]] = [
     (
         "POST",
         "/api/print",
-        '{"jobs":[…],"dry_run"?,"bookends"?,"pack"?} → plan + ONE stream per printer, the files back to back '
+        '{"jobs":[…],"dry_run"?,"bookends"?,"pack"?,"all_streams"?} → plan + ONE stream per printer, the files back to back '
         "(bookends: a START and an END label around every file's labels; pack, default true: a partial "
         "selection packed into full web rows); 409 while any row is refused, 500 when a stream is cut (every "
         "file logged with its verdict)",
@@ -285,9 +285,17 @@ class Handler(SimpleHTTPRequestHandler):
                 refused = any(r.refused for r in rows)
                 with self.lock:  # one stream at a time on the bus
                     notes = run(
-                        self.root, self.reg, rows, self.log_path, dry_run=dry, bookends=bookends, pack=pack
+                        self.root,
+                        self.reg,
+                        rows,
+                        self.log_path,
+                        dry_run=dry,
+                        bookends=bookends,
+                        pack=pack,
+                        all_streams=bool(doc.get("all_streams")),
                     )
-                failed = [r for r in rows if r.sent is False]
+                held = [r for r in rows if r.sent is False and (r.error or "").startswith("held:")]
+                failed = [r for r in rows if r.sent is False and r not in held]
                 sent = not dry and not refused and not failed
                 body = {
                     "plan": [asdict(r) for r in rows],
@@ -295,6 +303,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "sent": sent,
                     "bookends": bookends,
                     "pack": pack,
+                    "held": [r.file for r in held],
                 }
                 if failed:
                     body["error"] = failed[0].error or "a send failed"

@@ -161,6 +161,16 @@ of ~1.2 MB each:
   between files, nothing to wait for, no second connection to be reset. Each file is logged with its place in
   the stream (`stream: {id, offset, length}`), so the paper, the files and the bytes line up: with bookends,
   the START and END of each file are on the roll in order.
+- **A stream has a size the board will take (0.24.0).** 5 MB streams printed; a 19.8 MB one was cut at
+  7,229,016 bytes. That was a rule in people's heads — "carts of one rack, four files, under 5 MB; the END
+  label of the last file is the gate before the next cart" — and now a line on the printer record:
+  `max_stream_bytes: 5 MB`. `printcart` splits the cart for that printer into streams at the budget, in cart
+  order, each a complete job (registration prefix, heat retuned in front, every file's START and END); the plan
+  says `stream 2 of 3 (budget 5 MB)`. The FIRST stream goes; the rest are HELD — logged so, exit code 3 — with
+  the exact command to send them printed, because the gate is the END label in your hand, not the sender's
+  clock. `--all-streams` sends them in turn instead, each waiting for the port as every stream does. A file
+  whose selection is over the budget alone is refused with the remedy (two cart entries with fewer labels). A
+  cart under the budget is the one stream of 0.16.0, byte for byte.
 - **Before the stream's connection** the port is waited on: refused, timed out, or closed at once by the board =
   not ready, retried with backoff for up to 900 s, never a failed job. A connection the printer closes BEFORE any
   byte was accepted is retried — nothing is on the paper. One closed after bytes were accepted is never retried:
@@ -300,7 +310,9 @@ on an Ethernet board*). `--bookends` marks every file inside the stream: START, 
 `print --bookends`); the plan shows `+2 bookends` on each row and keeps `count` as the labels. The page has
 the same as a checkbox beside *print*, off by default, and the API takes `"bookends": true`; the print log
 marks each entry. `--proof F.pdf|F.png` writes the composed stream as a proof (one document per printer). A cut
-stream is logged file by file, the exit code is 1, and nothing is resent.
+stream is logged file by file, the exit code is 1, and nothing is resent. A printer with `max_stream_bytes` on
+its record gets its cart in streams of at most that size: the first is sent, the rest are held for the END label
+(exit code 3, the command to send them printed) unless `--all-streams` (see *Long jobs on an Ethernet board*).
 
 Each file's partial selection is packed into full rows (see `print`, 0.17.0) — per FILE, never across files: a
 web row never mixes two files and the bookends stay per file. The plan row says `2,4,6,8,10,14,16 → 4 rows

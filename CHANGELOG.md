@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.24.0 — 2026-11-08
+
+- `max_stream_bytes` on a printer record (`5 MB`, `4 MiB`, or bytes): `printcart` splits that printer's cart
+  into streams of at most the budget, in cart order, each a complete job of its own — the registration prefix,
+  the heat retuned in front, every file's START and END with `--bookends` — and the plan says `stream 2 of 3
+  (budget 5 MB)`. The first stream is sent; the later ones are HELD (rows `sent: false`, `error: "held: …"`,
+  logged so, exit code 3) with the exact `rasterezpl printcart …` command to send them printed, because the
+  gate between streams is the END label in the operator's hand, not the sender's clock. `--all-streams` (API
+  `"all_streams": true`) sends them in turn, each waiting for the port as every stream does. A file whose
+  selection is over the budget alone is refused with the remedy (two cart entries with fewer labels). Pinned:
+  a cart under the budget composes the one stream of 0.16.0 byte for byte; the stream tests of 0.16.0–0.19.0
+  are unchanged. `rasterezpl.registry.parse_bytes` / `format_bytes`; `Stream.index` / `total` / `budget` /
+  `where`.
+- Lesson: the rule "carts of one rack, under 5 MB, the END label before the next cart" lived in people's heads
+  since 2026-10-17, when 5 MB streams printed and a 19.8 MB one was cut at 7,229,016 bytes. A rule the tool
+  does not know is a rule a tired operator at 2 a.m. forgets; now the record holds it and the tool stops at the
+  gate. Holding rather than sending on was the design choice: the board's own refusal while busy would pace a
+  blind sender, but a second stream's START on the roll before anyone has read the first stream's END is exactly
+  what the rule exists to prevent.
+
 ## 0.23.0 — 2026-11-08
 
 - `rasterezpl import FILE.ezpx|FILE.pemx [--data rows.csv|.xlsx] [--media M] [--font FACE] [--partial] -o job.ezpl

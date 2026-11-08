@@ -125,7 +125,7 @@ selection stayed unpacked (`not packed: print areas differ in size (…)` — a 
 the same size in dots). `sent`, `error` and `stream` are filled by print.
 
 ### `POST /api/print`
-Same body as plan (`pack` included), plus `"dry_run": true` to stop after the plan and `"bookends": true` to put
+Same body as plan (`pack` included), plus `"dry_run": true` to stop after the plan, `"all_streams": true` (below) and `"bookends": true` to put
 a START block before and an END block after EVERY file's labels (off by default). The clean plan is sent as ONE STREAM PER
 PRINTER: the registration prefix once, the darkness / speed retuned once in front, then every file for that
 printer in cart order (START, blocks, END with bookends) over one connection — see the README, *Long jobs on an
@@ -141,6 +141,13 @@ Ethernet board*. There is no gap between files and nothing to wait for; `"settle
 `sent` is false (and the status 409) while any row is refused: nothing goes to any printer until the cart is
 clean. With `dry_run` the status is 200, the notes describe each stream (files, blocks, bookends, bytes) and end
 with `dry run — nothing sent` (with bookends: `dry run — +2 bookends per file, nothing sent`).
+
+A printer whose record has `max_stream_bytes` gets its cart in several streams, each at most that size (the
+notes say `stream 3f2a9c1e → tdp43me (2 of 3, budget 5 MB): …`). The first is sent; the rest are HELD — their
+rows `sent: false` with `error: "held: stream 2 of 3 for tdp43me (budget 5 MB) — the END label of stream 1 is
+the gate"`, logged so, listed in `"held": ["c/d.ezpl", …]` — and the response is 200 with `sent` true when
+everything that was due went. `"all_streams": true` sends every stream in turn instead. A file over the budget
+alone is a 400 with the remedy.
 
 Before each stream's connection the port is waited on (refused / timed out / closed at once = not ready, retried
 with backoff for up to 900 s). A stream the printer cuts is reported file by file: the files wholly before the

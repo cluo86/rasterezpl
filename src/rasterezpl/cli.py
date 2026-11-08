@@ -310,6 +310,12 @@ def _parser() -> argparse.ArgumentParser:
         "stacked; one document per printer (<name>-<printer>.pdf when the cart spans several)",
     )
     q.add_argument("--log", help="print log, JSON lines (default <root>/.rasterezpl-printlog.jsonl)")
+    q.add_argument(
+        "--all-streams",
+        action="store_true",
+        help="a printer with a max_stream_bytes budget: send every stream of its cart in turn (default: the "
+        "first only; the rest are HELD with the command to send them — the END label is the gate)",
+    )
     return p
 
 
@@ -414,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
                 bookends=args.bookends,
                 proof=args.proof,
                 pack=not args.no_pack,
+                all_streams=args.all_streams,
             )
         except ValueError as e:
             sys.exit(str(e))
@@ -421,7 +428,10 @@ def main(argv: list[str] | None = None) -> int:
             print(note)
         if not all(r.ok for r in rows):
             return 2
-        return 1 if any(r.sent is False for r in rows) else 0
+        unsent = [r for r in rows if r.sent is False]
+        if unsent and all((r.error or "").startswith("held:") for r in unsent):
+            return 3  # everything that went, went; streams are held for the END label gate
+        return 1 if unsent else 0
 
     if args.cmd == "printers":
         if not reg.printers:
