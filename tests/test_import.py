@@ -551,9 +551,16 @@ def test_import_design_pemx_refuses_data_and_unknown_suffix(tmp_path):
 
 # -- the command ---------------------------------------------------------------------------------------------------
 def run(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "rasterezpl", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8"
+    r = subprocess.run(
+        [sys.executable, "-m", "rasterezpl", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
+    assert isinstance(r.stdout, str) and isinstance(r.stderr, str), repr(r)[:800]  # diagnosis on a CI runner
+    return r
 
 
 def test_cli_import_writes_the_job_and_the_proof_and_says_whose_rendering_it_is(tmp_path):
