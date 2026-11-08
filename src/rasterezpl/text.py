@@ -80,8 +80,8 @@ def system_fonts() -> dict[str, str]:
     """The faces installed on this machine: display name → path for every ``.ttf`` / ``.otf`` / ``.ttc`` under
     :func:`font_dirs` (recursively), named as the font names itself — family, plus the style unless Regular
     ("Arial", "Arial Bold", "Arial Narrow") — read with Pillow, no font registry consulted (Windows' registry
-    and fontconfig are not needed). A file Pillow cannot open is skipped; the first file for a name wins.
-    Computed once per process."""
+    and fontconfig are not needed). A file Pillow cannot open is skipped; the first file for a name wins; a
+    face inside a collection past its first is ``"path#index"``. Computed once per process."""
     from PIL import ImageFont
 
     out: dict[str, str] = {}
@@ -89,17 +89,23 @@ def system_fonts() -> dict[str, str]:
         for f in sorted(d.rglob("*")):
             if f.suffix.lower() not in (".ttf", ".otf", ".ttc") or not f.is_file():
                 continue
-            try:
-                family, style = ImageFont.truetype(str(f), 10, layout_engine=ImageFont.Layout.BASIC).getname()
-            except Exception:
-                continue
-            family = str(family or f.stem)
-            name = (
-                family
-                if not style or style.lower() in ("regular", "normal", "book", "roman")
-                else f"{family} {style}"
-            )
-            out.setdefault(name, str(f))
+            # a collection (.ttc) holds several faces: Windows' msyh.ttc is "Microsoft YaHei" at index 0 and
+            # "Microsoft YaHei UI" — the face GoLabel templates name — at index 1; every face is listed, the
+            # ones past the first as "path#index" (see `load_font`)
+            for i in range(32 if f.suffix.lower() == ".ttc" else 1):
+                try:
+                    family, style = ImageFont.truetype(
+                        str(f), 10, index=i, layout_engine=ImageFont.Layout.BASIC
+                    ).getname()
+                except Exception:
+                    break
+                family = str(family or f.stem)
+                name = (
+                    family
+                    if not style or style.lower() in ("regular", "normal", "book", "roman")
+                    else f"{family} {style}"
+                )
+                out.setdefault(name, str(f) if i == 0 else f"{f}#{i}")
     return out
 
 
@@ -177,7 +183,18 @@ def load_font(path: str, px: int):
     machine, and a label is proven as it prints."""
     from PIL import ImageFont
 
-    return ImageFont.truetype(path, max(1, int(px)), layout_engine=ImageFont.Layout.BASIC)
+    path, index = split_face(path)
+    return ImageFont.truetype(path, max(1, int(px)), index=index, layout_engine=ImageFont.Layout.BASIC)
+
+
+def split_face(path: str) -> tuple[str, int]:
+    """``"C:/Windows/Fonts/msyh.ttc#1"`` → the file and the face index inside a collection (0 when the path
+    is a plain file — a ``#`` that is part of a real file name stays with it)."""
+    if "#" in path and not Path(path).exists():
+        base, _, idx = path.rpartition("#")
+        if idx.isdigit() and Path(base).exists():
+            return base, int(idx)
+    return path, 0
 
 
 def pt_to_px(pt: float, dpi: int) -> int:

@@ -112,8 +112,10 @@ The site laptops run Windows; that is where GoLabel and EasyMark live, and since
 - **The registry** is read from `%APPDATA%\rasterezpl\printers.yaml` first, then `~/.config/rasterezpl/printers.yaml`
   (`--registry` / `$RASTEREZPL_PRINTERS` still win). Put a new one in the first.
 - **Fonts**: `C:\Windows\Fonts` and the per-user `%LOCALAPPDATA%\Microsoft\Windows\Fonts` are enumerated, each
-  face under the name the font gives itself (`Arial`, `Arial Narrow`), so the page's face list and `--font` see
-  what the laptop has; the four bundled faces are there as everywhere. No Windows font registry is read.
+  face under the name the font gives itself (`Arial`, `Arial Narrow`), every face of a collection included
+  (`msyh.ttc` is `Microsoft YaHei` and `Microsoft YaHei UI`, the face GoLabel templates name), so the page's
+  face list and `--font` see what the laptop has; the four bundled faces are there as everywhere. No Windows
+  font registry is read.
 - **Console**: the summaries carry `→` and `·`. A real Windows console prints them (Python's console is UTF-8);
   output redirected to a file under the cp1252 code page prints `?` for them instead of dying
   (`PYTHONUTF8=1` makes every stream UTF-8).

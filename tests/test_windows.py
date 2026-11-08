@@ -5,9 +5,11 @@ caveat, the pinned layout engine, and ``python -m rasterezpl``. No printer, no s
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -406,3 +408,24 @@ def test_module_entry_point_and_tolerant_console():
         env={**os.environ, **env},
     )
     assert r.returncode == 0 and r.stdout.strip() == b"a ? b \xb7 c"
+
+
+def test_a_face_inside_a_collection_is_listed_and_loads():
+    """Windows' msyh.ttc: "Microsoft YaHei" at index 0, "Microsoft YaHei UI" (the face GoLabel templates name)
+    at index 1 — listed as path#1 and loaded by that index. The parsing is tested everywhere with a bundled
+    face at #0; the collection itself only where Windows has it."""
+    from rasterezpl.text import bundled_fonts, find_font, load_font, split_face, system_fonts
+
+    inter = bundled_fonts()["Inter"]
+    assert split_face(inter) == (inter, 0) and split_face(inter + "#0") == (inter, 0)
+    assert split_face("/no/such/file.ttc#3") == ("/no/such/file.ttc#3", 0)  # nothing to split: not a file
+    assert load_font(inter + "#0", 20).getname() == load_font(inter, 20).getname()
+    msyh = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "msyh.ttc"
+    if sys.platform != "win32" or not msyh.exists():
+        pytest.skip("Microsoft YaHei collection not on this machine")
+    system_fonts.cache_clear()
+    fonts = system_fonts()
+    assert fonts["Microsoft YaHei"].lower() == str(msyh).lower()
+    assert fonts["Microsoft YaHei UI"].lower() == f"{msyh}#1".lower()
+    path = find_font("Microsoft YaHei UI")
+    assert path is not None and load_font(path, 20).getname()[0] == "Microsoft YaHei UI"

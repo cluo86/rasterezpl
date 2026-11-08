@@ -22,6 +22,10 @@
   `media_for_ezpx`, `media_for_pemx`, `render_ezpx`, `render_pemx`, `import_design`, `Imported`, `DISCLAIMER`.
   Fifteen tests on synthetic files (a site's project is its own and never enters this repo), one of them the
   rendering's hash — the CI matrix checks the imported labels too are the same on every machine.
+- Every face inside a font collection is now listed: Windows' `msyh.ttc` is "Microsoft YaHei" at index 0 and
+  "Microsoft YaHei UI" — the face a real GoLabel template names — at index 1, which the scan missed (first face
+  only) until the importer asked for it on the Windows machine. A face past the first is `path#index`, and
+  `load_font` reads the index.
 - Lesson: a real template, tried locally, bound `^F06` while its workbook's first sheet has six columns — what
   GoLabel prints for a field with no column is unknown (nothing, probably), so the importer refuses and names
   the column rather than guess, and `--partial` prints it blank and says so. The same template had three boxes
