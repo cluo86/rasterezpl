@@ -19,6 +19,8 @@ def proof_image(m: Media, page, overlay: Callable | None = None, caption: str = 
     `to_px(x_in, y_in)` maps physical inches to pixels of the returned image."""
     from PIL import Image, ImageDraw, ImageFont
 
+    from .text import find_font, load_font
+
     w, h = m.width_px, m.length_px
     phys = page.convert("L").rotate(180) if m.rotate180 else page.convert("L")
     img = Image.new("RGB", (w + 2 * MARGIN, h + 2 * MARGIN), "white")
@@ -45,10 +47,8 @@ def proof_image(m: Media, page, overlay: Callable | None = None, caption: str = 
     img.paste(ink, (ox, oy), mask)
     # mm scales (physical frame): x along the top, y down the left; a number every 10 mm
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 11)
-    except OSError:
-        font = ImageFont.load_default()
+    inter = find_font("Inter")  # the bundled face: the caption and scale look the same on every machine
+    font = load_font(inter, 11) if inter else ImageFont.load_default()
     mm = m.dpi / 25.4
     for i in range(int(w / mm) + 1):
         x = ox + round(i * mm)

@@ -36,7 +36,7 @@ from .layouts import render_label
 from .media import Media
 from .registry import Registry
 from .stream import count_labels, decode_block, job, parse_blocks
-from .text import FONT_CANDIDATES, bundled_fonts, find_font, pt_to_px
+from .text import FONT_CANDIDATES, bundled_fonts, find_font, pt_to_px, system_fonts
 
 COMPOSED_DIR = "composed"
 FONTS_DIR = "fonts"
@@ -205,7 +205,10 @@ def expand(labels: list[str], copies: int = 1, start: int = 1) -> list[str]:
 
 
 def fonts_available(root: Path | None = None) -> list[dict]:
-    """Faces this machine can print: the known candidates that resolve, plus any .ttf/.otf under <root>/fonts."""
+    """Faces this machine can print: the bundled ones first (they render the same everywhere), the known
+    candidates that resolve, any .ttf/.otf under <root>/fonts, then every face installed on this OS
+    (:func:`rasterezpl.text.system_fonts`, marked ``system``) — a Windows laptop's ``C:\\Windows\\Fonts``
+    included. One entry per file."""
     out = [{"name": n, "path": p, "bundled": True} for n, p in bundled_fonts().items()]
     for name in FONT_CANDIDATES:
         found = find_font(name)
@@ -215,6 +218,11 @@ def fonts_available(root: Path | None = None) -> list[dict]:
         for f in sorted((root / FONTS_DIR).glob("*")):
             if f.suffix.lower() in (".ttf", ".otf"):
                 out.append({"name": f.stem, "path": str(f)})
+    seen = {Path(str(e["path"])).resolve() for e in out}
+    for name, path in sorted(system_fonts().items()):
+        if Path(path).resolve() not in seen:
+            out.append({"name": name, "path": path, "system": True})
+            seen.add(Path(path).resolve())
     return out
 
 

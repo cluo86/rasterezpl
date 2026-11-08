@@ -1,15 +1,25 @@
-"""Getting the bytes to the printer: TCP 9100, USB printer class (pyusb), a raw CUPS queue, or a file.
+"""Getting the bytes to the printer: TCP 9100, USB printer class (pyusb), a raw CUPS queue, a Windows print
+queue, or a file.
 
 The printer only ever sees a byte stream; it does not know what produced it. That is why no driver is needed.
 
-* ``tcp://host[:9100]`` — Godex LAN ports and the Panduit NetPS module speak raw on 9100.
+* ``tcp://host[:9100]`` — Godex LAN ports and the Panduit NetPS module speak raw on 9100. Plain sockets: the same
+  on every OS, and the common floor case (a TDP43ME with the NetPS board, a G500 with its Ethernet option).
 * ``usb:``, ``usb:<serial>``, ``usb:<name part>``, ``usb:VID:PID`` — the USB printer-class device itself (pyusb +
   libusb). macOS 26 dropped raw CUPS queues ("Raw queues are no longer supported"), so on a Mac this is the way.
-  Godex and Panduit printers can share one VID:PID (195f:0001), so select by serial or product name.
+  Godex and Panduit printers can share one VID:PID (195f:0001), so select by serial or product name. On Windows
+  the printer-class driver owns the device and libusb cannot claim it (a WinUSB driver swapped in with Zadig
+  would, which a site laptop will not get): use ``win:`` there.
 * ``lp:<queue>`` — a raw CUPS queue (Linux: ``lpadmin -p x -E -v usb://… -m raw``).
+* ``win:<queue name>`` — a Windows print queue, written through the spooler with the RAW datatype (pywin32,
+  extra ``rasterezpl[windows]``): the bytes pass through unchanged — no driver rendering, the job IS the raster —
+  and the queue's own port (USB, TCP/IP) is the pipe, so the driver the laptop already has is enough.
+  ``rasterezpl queues`` lists the queues (and on macOS / Linux the CUPS queues for ``lp:``).
 * anything else — a file path; the bytes are written for later.
 
-``~S,CHECK`` reads the printer state back (00 = ready) over TCP or over the USB IN endpoint.
+``~S,CHECK`` reads the printer state back (00 = ready) over TCP or over the USB IN endpoint. A queue (``lp:``,
+``win:``) has no such channel: the status says so, and ``win:`` adds what the spooler knows (its status word
+and the jobs waiting).
 """
 
 from __future__ import annotations
@@ -17,6 +27,7 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -26,6 +37,40 @@ from .stream import count_labels
 
 USB_PRINTER_CLASS = 7
 USB_CHUNK = 16384
+
+WIN_USB_NOTE = (
+    "on Windows the printer-class driver (usbprint.sys) owns a USB printer and libusb cannot claim it — print "
+    "through the printer's Windows queue instead: win:<queue name> (`rasterezpl queues` lists them), or swap a "
+    "WinUSB driver in with Zadig for usb:"
+)
+
+
+def _usb_modules():
+    """pyusb's core and util, or a RuntimeError saying what to install (and, on Windows, what to use instead)."""
+    try:
+        import usb.core
+        import usb.util
+    except ImportError:
+        raise RuntimeError(
+            'usb: needs pyusb and libusb (pip install "rasterezpl[usb]"; brew install libusb)'
+            + (f" — {WIN_USB_NOTE}" if sys.platform == "win32" else "")
+        ) from None
+    return usb.core, usb.util
+
+
+def _usb_find_all(core):
+    """Every USB device, or a RuntimeError when libusb has no backend (not installed; on Windows the usual case)."""
+    try:
+        return list(core.find(find_all=True))
+    except core.NoBackendError:
+        raise RuntimeError(
+            "pyusb found no libusb backend"
+            + (
+                f" — {WIN_USB_NOTE}"
+                if sys.platform == "win32"
+                else " (brew install libusb / apt install libusb-1.0-0)"
+            )
+        ) from None
 
 
 def status_tcp(host: str, port: int = 9100, timeout: float = 3.0) -> str:
@@ -55,11 +100,11 @@ def _usb_matches(d, spec: str, util) -> bool:
 
 def list_usb_printers() -> list[dict[str, str]]:
     """Every USB printer-class device on the bus: vid:pid, manufacturer, product, serial."""
-    import usb.core
+    core, _util = _usb_modules()
     import usb.util
 
     out = []
-    for d in usb.core.find(find_all=True):
+    for d in _usb_find_all(core):
         if not any(i.bInterfaceClass == USB_PRINTER_CLASS for cfg in d for i in cfg):
             continue
         out.append(
@@ -78,13 +123,13 @@ class UsbPrinter:
     collects a reply if the device has an IN endpoint."""
 
     def __init__(self, spec: str = ""):
-        import usb.core
+        core, util = _usb_modules()
         import usb.util
 
         self._util = usb.util
         devs = [
             d
-            for d in usb.core.find(find_all=True)
+            for d in _usb_find_all(core)
             if any(i.bInterfaceClass == USB_PRINTER_CLASS for cfg in d for i in cfg)
             and _usb_matches(d, spec, usb.util)
         ]
@@ -122,7 +167,16 @@ class UsbPrinter:
                 self.dev.detach_kernel_driver(self.intf.bInterfaceNumber)
         except Exception:
             pass  # macOS: nothing to detach; CUPS only holds the device during a job
-        self._util.claim_interface(self.dev, self.intf.bInterfaceNumber)
+        try:
+            self._util.claim_interface(self.dev, self.intf.bInterfaceNumber)
+        except Exception as e:  # usb.core.USBError: access denied / not supported — another driver holds it
+            if sys.platform == "win32":
+                raise RuntimeError(
+                    f"{self.name}: cannot claim the USB interface ({e}) — {WIN_USB_NOTE}"
+                ) from None
+            raise RuntimeError(
+                f"{self.name}: cannot claim the USB interface ({e}) — another process (CUPS, a vendor tool) holds it?"
+            ) from None
         u = self._util
         self.ep_out = u.find_descriptor(
             self.intf, custom_match=lambda e: u.endpoint_direction(e.bEndpointAddress) == u.ENDPOINT_OUT
@@ -178,9 +232,144 @@ def status_usb(spec: str = "") -> str:
         return pr.read()
 
 
+def _win32print():
+    """pywin32's ``win32print``, or a RuntimeError saying what to install. Imported on demand: the module exists
+    on Windows only, and the rest of the package must import everywhere."""
+    try:
+        import win32print
+    except ImportError:
+        raise RuntimeError(
+            'win:<queue> needs pywin32 (pip install "rasterezpl[windows]") — the Windows spooler\'s RAW datatype'
+            + ("" if sys.platform == "win32" else "; a Windows print queue is reachable from Windows only")
+        ) from None
+    return win32print
+
+
+def list_win_queues() -> list[dict[str, Any]]:
+    """The Windows print queues this user can print to (local and connected shares): name, port, driver, the
+    spooler's status word (0 = no error flag), the jobs waiting, and whether it is the default. Each is a
+    ``win:<name>`` target."""
+    wp = _win32print()
+    try:
+        default = wp.GetDefaultPrinter()
+    except Exception:  # no default printer set
+        default = None
+    out = []
+    for d in wp.EnumPrinters(wp.PRINTER_ENUM_LOCAL | wp.PRINTER_ENUM_CONNECTIONS, None, 2):
+        name = str(d.get("pPrinterName", ""))
+        out.append(
+            {
+                "name": name,
+                "port": str(d.get("pPortName", "") or ""),
+                "driver": str(d.get("pDriverName", "") or ""),
+                "status": int(d.get("Status", 0) or 0),
+                "jobs": int(d.get("cJobs", 0) or 0),
+                "default": name == default,
+            }
+        )
+    return out
+
+
+def list_lp_queues() -> list[dict[str, Any]]:
+    """The CUPS queues ``lpstat -p`` knows (macOS / Linux): name, its state line, and whether it is the default
+    (``lpstat -d``). Each is an ``lp:<name>`` target — a RAW queue, or the bytes are rendered by a driver."""
+    try:
+        r = subprocess.run(["lpstat", "-p"], capture_output=True, text=True)
+        d = subprocess.run(["lpstat", "-d"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return []
+    default = d.stdout.rpartition(":")[2].strip() if d.returncode == 0 and ":" in d.stdout else None
+    out = []
+    for line in r.stdout.splitlines():
+        if not line.startswith("printer "):
+            continue
+        name = line.split()[1]
+        out.append({"name": name, "state": line.partition(name)[2].strip(), "default": name == default})
+    return out
+
+
+def list_queues() -> list[dict[str, Any]]:
+    """The print queues of this OS: :func:`list_win_queues` on Windows, :func:`list_lp_queues` elsewhere."""
+    return list_win_queues() if sys.platform == "win32" else list_lp_queues()
+
+
+def status_win(queue: str) -> str:
+    """What the spooler knows about a Windows queue — there is no ``~S,CHECK`` over a queue, so the answer never
+    starts with ``00``: a ``--status`` print refuses, as it does for ``lp:``. Says the spooler's status word (0 =
+    no error flag set: paused, offline, out of paper … are bits of it) and the jobs waiting."""
+    wp = _win32print()
+    try:
+        h = wp.OpenPrinter(queue)
+    except Exception as e:
+        return f"win queue {queue!r}: cannot open it ({e}); `rasterezpl queues` lists the queues"
+    try:
+        info = wp.GetPrinter(h, 2)
+    finally:
+        wp.ClosePrinter(h)
+    st, jobs = int(info.get("Status", 0) or 0), int(info.get("cJobs", 0) or 0)
+    return (
+        f"win queue {queue!r}: no ~S,CHECK over a queue; spooler status {st}"
+        + ("" if st == 0 else " (an error flag is set: paused, offline, paper or ribbon?)")
+        + f", {jobs} job{'s' if jobs != 1 else ''} waiting"
+    )
+
+
+def send_win(data: bytes, queue: str, doc_name: str = "rasterezpl job") -> int:
+    """Stream a job to a Windows print queue through the spooler with the RAW datatype: the spooler passes the
+    bytes through unchanged to the queue's port (USB, TCP/IP, LPT), so the driver the laptop already has is the
+    pipe and no WinUSB / libusb swap is needed. Chunked like :func:`send_tcp`; ``WritePrinter`` may take fewer
+    bytes than given and the rest is written again.
+
+    Accepted by the spooler is not printed: the spooler holds the job in its spool file and feeds the port as the
+    printer takes bytes — the END label of ``--bookends`` on the roll is the gate, here as on an Ethernet board.
+    A failure after some bytes aborts the spooled document (nothing more is fed) and raises :class:`SendError`
+    with the bytes the spooler had taken — what of them reached the printer depends on the queue's "start
+    printing immediately" setting: read the roll."""
+    wp = _win32print()
+    try:
+        h = wp.OpenPrinter(queue)
+    except Exception as e:  # pywintypes.error: no such queue, access denied
+        raise SendError(
+            f"win:{queue}: cannot open the queue ({e}); `rasterezpl queues` lists them; nothing sent", 0
+        ) from None
+    sent = 0
+    try:
+        try:
+            wp.StartDocPrinter(
+                h, 1, (doc_name, None, "RAW")
+            )  # level 1: (document name, output file, datatype)
+        except Exception as e:
+            raise SendError(f"win:{queue}: the spooler refused the document ({e}); nothing sent", 0) from None
+        try:
+            wp.StartPagePrinter(h)
+            view = memoryview(data)
+            while sent < len(view):
+                n = int(wp.WritePrinter(h, bytes(view[sent : sent + TCP_CHUNK])))
+                if n <= 0:
+                    raise OSError("WritePrinter wrote 0 bytes")
+                sent += n
+            wp.EndPagePrinter(h)
+            wp.EndDocPrinter(h)
+        except Exception as e:
+            try:
+                wp.AbortPrinter(h)  # drop the partial document: the spooler feeds the printer nothing more
+            except Exception:
+                pass
+            raise SendError(
+                f"win:{queue}: the spooler stopped taking data after {sent} bytes of {len(data)} ({e}); the "
+                "partial document was aborted — what reached the printer depends on the queue's spooling "
+                "setting: read the roll",
+                sent,
+            ) from None
+    finally:
+        wp.ClosePrinter(h)
+    return sent
+
+
 def status(target: str) -> str:
     """``~S,CHECK`` for a tcp:// or usb: target ('' when the printer is silent). A file spool is always ready:
-    ``00 file spool`` when its directory can take the file, else a message. An lp: queue has no status here."""
+    ``00 file spool`` when its directory can take the file, else a message. An lp: queue has no status here;
+    a win: queue reports what the spooler knows (never ``00``)."""
     if target.startswith("tcp://"):
         host, _, port = target[6:].partition(":")
         return status_tcp(host, int(port) if port else 9100)
@@ -188,6 +377,8 @@ def status(target: str) -> str:
         return status_usb(target[4:])
     if target.startswith("lp:"):
         return f"lp queue {target[3:]!r}: no status over lp (lpstat knows)"
+    if target.startswith("win:"):
+        return status_win(target[4:])
     from pathlib import Path
 
     d = Path(target).expanduser().parent
@@ -345,6 +536,10 @@ def deliver(
         if r.returncode:
             raise RuntimeError(f"lp failed: {r.stderr.decode(errors='replace').strip()}")
         return f"queued {len(data)} bytes ({n_labels} labels) on {q}: {r.stdout.decode().strip()}", len(data)
+    if target.startswith("win:"):
+        q = target[4:]
+        n = send_win(data, q)
+        return f"spooled {n} bytes ({n_labels} labels) on Windows queue {q!r} as RAW", n
     out = Path(target)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(data)

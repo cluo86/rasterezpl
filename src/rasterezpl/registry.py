@@ -1,7 +1,9 @@
 """The user's printers and media, in a YAML file — because registration offsets belong to one machine, not to a
 code base or a job file.
 
-Location: ``--registry PATH``, else ``$RASTEREZPL_PRINTERS``, else ``~/.config/rasterezpl/printers.yaml``.
+Location: ``--registry PATH``, else ``$RASTEREZPL_PRINTERS``, else the first of :func:`default_paths` that exists:
+``%APPDATA%\\rasterezpl\\printers.yaml`` (Windows' place for a user's settings — looked at wherever ``APPDATA`` is
+set), then ``~/.config/rasterezpl/printers.yaml`` (macOS, Linux, and a Windows setup that keeps it there).
 
 .. code-block:: yaml
 
@@ -42,6 +44,23 @@ from .presets import PRESETS
 DEFAULT_PATH = Path("~/.config/rasterezpl/printers.yaml").expanduser()
 
 
+def default_paths() -> list[Path]:
+    """Where the registry is looked for when neither ``--registry`` nor ``$RASTEREZPL_PRINTERS`` names it, in
+    order: ``%APPDATA%/rasterezpl/printers.yaml`` when ``APPDATA`` is set (Windows), then
+    ``~/.config/rasterezpl/printers.yaml``. A new registry on Windows belongs in the first."""
+    out = []
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        out.append(Path(appdata) / "rasterezpl" / "printers.yaml")
+    out.append(DEFAULT_PATH)
+    return out
+
+
+def suggested_path() -> Path:
+    """Where to put a registry on this machine: the idiomatic place among :func:`default_paths`."""
+    return default_paths()[0]
+
+
 @dataclass(frozen=True)
 class Printer:
     name: str
@@ -71,7 +90,7 @@ def registry_path(explicit: str | None = None) -> Path | None:
     env = os.environ.get("RASTEREZPL_PRINTERS")
     if env:
         return Path(env).expanduser()
-    return DEFAULT_PATH if DEFAULT_PATH.exists() else None
+    return next((p for p in default_paths() if p.exists()), None)
 
 
 def media_from_dict(name: str, d: dict) -> Media:

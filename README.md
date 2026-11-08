@@ -1,10 +1,11 @@
 # rasterezpl
 
-Print any bitmap to Godex-language (EZPL) thermal label printers from macOS or Linux, with no driver.
+Print any bitmap to Godex-language (EZPL) thermal label printers from macOS, Linux or Windows, with no driver.
 
 Works with Godex desktop printers (G500 and family) and with printers that are Godex OEMs and speak EZPL under
 another badge, notably the **Panduit TDP43ME** (its own manual lists "Printer Language: EZPL"). If your label
-software is Windows-only and your laptop is a Mac, this is the missing piece.
+software is Windows-only and your laptop is a Mac, this is the missing piece — and on the Windows laptop beside
+the printer it is the same labels, rendered once, with the guards and the log that GoLabel / EasyMark lack.
 
 ## What it does
 
@@ -25,6 +26,7 @@ software is Windows-only and your laptop is a Mac, this is the missing piece.
 ```
 pip install rasterezpl            # library + CLI
 pip install "rasterezpl[usb]"     # + pyusb for --to usb: (needs libusb: brew install libusb)
+pip install "rasterezpl[windows]" # + pywin32 for --to win:<queue> — a Windows print queue, RAW through the spooler
 ```
 
 ## Five minutes with a Panduit TDP43ME on a Mac
@@ -84,6 +86,37 @@ carries `rows` and `packed` (the `labels` key keeps the selection as given — t
 numbers). A label is moved only between print areas of the same size in dots; a media whose areas differ is
 never packed, the labels keep their own rows with the other area blank, and the summary says why.
 `--no-pack` keeps every label in its original row and area on any media. `--proof` shows the packed rows.
+
+## Windows
+
+The site laptops run Windows; that is where GoLabel and EasyMark live, and since 0.20.0 where rasterezpl runs too
+(CI runs the suite on Windows, macOS and Linux). What differs on Windows, and nothing else does:
+
+- **`tcp://` needs nothing.** A TDP43ME with the NetPS board or a G500 with its Ethernet option is plain sockets,
+  the same bytes and the same one-connection rules as from a Mac.
+- **`win:<queue name>`** prints through a Windows print queue — the one the vendor's driver installed for the USB
+  printer, or any queue you add — with the spooler's RAW datatype: the bytes pass through unchanged (no driver
+  rendering: the job IS the raster) and the queue's own port is the pipe. `rasterezpl queues` lists the queues
+  (`rasterezpl queues` on a Mac or Linux lists the CUPS queues for `lp:` the same way). Needs
+  `pip install "rasterezpl[windows]"` (pywin32). Accepted by the spooler is not printed, as on an Ethernet board;
+  the END label of `--bookends` is the gate. A failure mid-document aborts the spooled job and the error names
+  the bytes the spooler took.
+- **`usb:` does not work on Windows as installed**: the printer-class driver (usbprint.sys) owns the device and
+  libusb cannot claim it. The commands say so and point at `win:` instead of printing a traceback. Swapping a
+  WinUSB driver in with Zadig would free the device for pyusb, and a site laptop will not get that — use the
+  queue.
+- **`~S,CHECK` has no channel through a queue**: `status --to win:…` reports what the spooler knows (its status
+  word, 0 = no error flag; the jobs waiting) and never `00`, so `print --status` refuses over `win:` as it does
+  over `lp:`. Over `tcp://` it works as everywhere.
+- **The registry** is read from `%APPDATA%\rasterezpl\printers.yaml` first, then `~/.config/rasterezpl/printers.yaml`
+  (`--registry` / `$RASTEREZPL_PRINTERS` still win). Put a new one in the first.
+- **Fonts**: `C:\Windows\Fonts` and the per-user `%LOCALAPPDATA%\Microsoft\Windows\Fonts` are enumerated, each
+  face under the name the font gives itself (`Arial`, `Arial Narrow`), so the page's face list and `--font` see
+  what the laptop has; the four bundled faces are there as everywhere. No Windows font registry is read.
+- **Console**: the summaries carry `→` and `·`. A real Windows console prints them (Python's console is UTF-8);
+  output redirected to a file under the cp1252 code page prints `?` for them instead of dying
+  (`PYTHONUTF8=1` makes every stream UTF-8).
+- `python -m rasterezpl` is the command line too (the packaged executable, when there is one, runs it).
 
 ## Long jobs on an Ethernet board
 
@@ -155,6 +188,13 @@ printer offset until you print a ruler.
 - Bitmap data can contain `\rE\r`; jobs are parsed by declared lengths, never split on bytes.
 - Use the printer's stored darkness and speed unless you know the values your old software sent — and once
   two stocks share a head, record each one's (the stored value is the last job's).
+- **The raster depended on which machine composed it** until 0.20.0: Pillow lays text out with HarfBuzz (the
+  raqm engine, with kerning) wherever libfribidi happens to be installed — a Mac with Homebrew, an Ubuntu box —
+  and with FreeType's basic engine elsewhere — a Windows laptop, a bare Mac — and the two set the same line in
+  the same bundled face to different widths (Inter Bold at 100 dots/em, `IAD108.1 SC77 R6225/A`: 1162 dots basic,
+  1150.9 raqm; found by the CI matrix on 2026-11-08). Every font load is now pinned to the basic engine, which is
+  inside every Pillow wheel: one raster everywhere, no kerning anywhere. A label composed before 0.20.0 on a
+  machine with fribidi may differ from its recomposition by a dot or two of letter spacing.
 
 ## Try it with no printer
 
@@ -285,6 +325,9 @@ a push (CI was red for a week of releases on mypy errors nobody ran locally).
 ## Status
 
 Alpha. Verified on a Panduit TDP43ME (300 dpi, Panduit S150X225VATY two-across) and a Godex G500 (203 dpi,
-92 × 34 mm flag stock) over USB from macOS 26. Reports from other EZPL printers and stocks are welcome.
+92 × 34 mm flag stock) over USB from macOS 26, and over the NetPS Ethernet board from macOS. The Windows port
+(0.20.0) passes the suite on Windows in CI and its `win:` transport is tested against a recorded fake of the
+spooler API; a real print from a Windows laptop over `tcp://` and `win:` is the gate still open. Reports from
+other EZPL printers and stocks are welcome.
 
 MIT licence.

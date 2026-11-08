@@ -142,7 +142,7 @@ def test_same_stock_other_dpi_is_not_the_same_media(tmp_path):
 
     reg300 = tmp_path / "r300.yaml"
     reg300.write_text(
-        f'printers:\n  p300:\n    transport: "{tmp_path / "s300.ezpl"}"\n    media: panduit-s150x225vaty-2up\n'
+        f'printers:\n  p300:\n    transport: "{(tmp_path / "s300.ezpl").as_posix()}"\n    media: panduit-s150x225vaty-2up\n'
     )
     root = tmp_path / "root"
     root.mkdir()

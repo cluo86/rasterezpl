@@ -3,6 +3,7 @@
 rasterezpl printers                      the registry (printers, media, offsets)
 rasterezpl media                         media presets + the registry's
 rasterezpl usb                           USB printer-class devices on the bus
+rasterezpl queues                        the OS's print queues: Windows queues (win:<name>) or CUPS queues (lp:<name>)
 rasterezpl status  --printer P | --to T  ~S,CHECK (00 = ready)
 rasterezpl text    --media M --font F --pt 5.4 "l1\\nl2" … | --rows F.csv [--template T] -o job.ezpl   text labels → job
 rasterezpl image   --media M a.png b.png … -o job.ezpl                     bitmaps → job (one per area)
@@ -26,7 +27,7 @@ from .calibrate import ruler_job
 from .compose import Spec, render
 from .jobs import LOG_NAME, format_plan, parse_cart, plan, run, send_logged
 from .media import Media
-from .registry import Registry, load
+from .registry import Registry, default_paths, load, suggested_path
 from .stream import (
     blocks_outside_areas,
     count_labels,
@@ -41,7 +42,7 @@ from .stream import (
     select_labels,
 )
 from .text import find_font
-from .transport import list_usb_printers, send, status
+from .transport import list_queues, list_usb_printers, send, status
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -52,17 +53,29 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--version", action="version", version=f"rasterezpl {__version__}")
     p.add_argument(
         "--registry",
-        help="printers/media YAML (default $RASTEREZPL_PRINTERS or ~/.config/rasterezpl/printers.yaml)",
+        help="printers/media YAML (default $RASTEREZPL_PRINTERS, else %%APPDATA%%\\rasterezpl\\printers.yaml on "
+        "Windows, else ~/.config/rasterezpl/printers.yaml)",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("printers", help="list the registry's printers")
     sub.add_parser("media", help="list media (presets + registry)")
-    sub.add_parser("usb", help="list USB printer-class devices (needs pyusb)")
+    sub.add_parser(
+        "usb", help="list USB printer-class devices (needs pyusb; on Windows use a queue: win:<name>)"
+    )
+    sub.add_parser(
+        "queues",
+        help="list this OS's print queues — Windows: the spooler's queues, for win:<name> (needs pywin32); "
+        "macOS / Linux: the CUPS queues lpstat knows, for lp:<name>",
+    )
 
     def target_args(q: argparse.ArgumentParser, need_media: bool = True) -> None:
         q.add_argument("--printer", help="a registry printer: its transport, media and offset")
-        q.add_argument("--to", help="tcp://host[:9100] | usb:[serial|name|VID:PID] | lp:queue | a file path")
+        q.add_argument(
+            "--to",
+            help="tcp://host[:9100] | usb:[serial|name|VID:PID] | lp:queue | win:queue (Windows, RAW through the "
+            "spooler) | a file path",
+        )
         if need_media:
             q.add_argument("--media", help="a media name (preset or registry) when not using --printer")
 
@@ -258,7 +271,21 @@ def _resolve(reg: Registry, args, data: bytes | None = None):
     return args.to, mname, m, (0.0, 0.0), None
 
 
+def _tolerant_console() -> None:
+    """A console that cannot encode a character prints a ? instead of dying: the summaries carry → and · and a
+    Windows console redirected to a file is cp1252 (a real Windows console is UTF-8 since Python 3.6, and
+    ``PYTHONUTF8=1`` makes every stream UTF-8). Streams without ``reconfigure`` (a test capture) are left alone."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", None) or "").replace("-", "").lower()
+        if enc != "utf8" and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except Exception:
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _tolerant_console()
     args = _parser().parse_args(argv)
     if args.cmd == "demo":
         from .demo import demo
@@ -313,9 +340,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "printers":
         if not reg.printers:
-            print(
-                f"no printers on record ({reg.path or 'no registry file'}); see `rasterezpl --help` for the YAML"
+            where = (
+                str(reg.path)
+                if reg.path
+                else "no registry file at "
+                + " or ".join(str(p) for p in default_paths())
+                + f"; put yours at {suggested_path()}"
             )
+            print(f"no printers on record ({where}); see `rasterezpl --help` for the YAML")
         for pr in reg.printers.values():
             print(
                 f"{pr.name:12s} {pr.transport:24s} {pr.media_name:28s} offset {pr.offset_in[0]:+.3f},{pr.offset_in[1]:+.3f} in  {pr.note}"
@@ -328,12 +360,40 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
     if args.cmd == "usb":
-        for dev in list_usb_printers():
+        try:
+            devs = list_usb_printers()
+        except RuntimeError as e:
+            sys.exit(str(e))
+        for dev in devs:
             print(f"{dev['ids']}  {dev['manufacturer']} {dev['product']}  serial {dev['serial'] or '?'}")
+        return 0
+    if args.cmd == "queues":
+        try:
+            queues = list_queues()
+        except RuntimeError as e:
+            sys.exit(str(e))
+        if not queues:
+            print(
+                "no print queue on this machine" + (" (lpstat found none)" if sys.platform != "win32" else "")
+            )
+        for q in queues:
+            if "port" in q:  # a Windows queue
+                flags = f"status {q['status']}" + (", OK" if q["status"] == 0 else ", error flag set")
+                print(
+                    f"win:{q['name']:30s} port {q['port']:18s} {q['driver']:30s} {flags}, {q['jobs']} job(s)"
+                    + ("  (default)" if q["default"] else "")
+                )
+            else:
+                print(f"lp:{q['name']:31s} {q['state']}" + ("  (default)" if q["default"] else ""))
         return 0
     if args.cmd == "status":
         target, *_ = _resolve(reg, args)
-        st = status(target)
+        try:
+            st = status(target)
+        except (
+            RuntimeError
+        ) as e:  # pywin32 / pyusb missing, a device that cannot be claimed: the message, no trace
+            sys.exit(str(e))
         print(f"{target}: {st or 'no reply'}  (00 = ready)")
         return 0 if st.startswith("00") else 1
 

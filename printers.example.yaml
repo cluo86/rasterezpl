@@ -1,4 +1,5 @@
-# Copy to ~/.config/rasterezpl/printers.yaml (or point RASTEREZPL_PRINTERS / --registry at it).
+# Copy to ~/.config/rasterezpl/printers.yaml — on Windows %APPDATA%\rasterezpl\printers.yaml — (or point
+# RASTEREZPL_PRINTERS / --registry at it).
 # Offsets are per MACHINE: measure each printer once with `rasterezpl ruler`, record here, never in job files.
 
 media:
@@ -16,7 +17,7 @@ media:
 
 printers:
   tdp43me:
-    transport: "usb:TDP43ME"            # usb:<name part> | usb:<serial> | tcp://host[:9100] | lp:queue
+    transport: "usb:TDP43ME"            # usb:<name part> | usb:<serial> | tcp://host[:9100] | lp:queue | win:queue (Windows)
     media: panduit-s150x225vaty-2up     # preset
     offset_in: [0.0, 0.0]               # from the ruler print: x >= 0 (^R), y +/- (~Q), inches
     note: "not calibrated yet"

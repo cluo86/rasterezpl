@@ -50,20 +50,21 @@ def test_image_scale_and_quiet_zone():
 
 def test_layouts_and_composer():
     w, h = 1180, 300  # a 4 × 1 in label at 300 dpi
+    px = 96  # dots per em: 100 sets the rack text 1162 dots wide in Inter Bold, 2 past the 1160 the layout gives it
     inter = bundled_fonts()["Inter Bold"]
-    im = render_label(w, h, [RACK], inter, 100, "barcode", qr=RACK)
+    im = render_label(w, h, [RACK], inter, px, "barcode", qr=RACK)
     assert im.size == (w, h) and im.getextrema() == (0, 255)
     # the bars take the upper part, the text sits below them
     assert im.crop((0, 0, w, h // 4)).getextrema() == (0, 255)
     assert im.crop((0, 3 * h // 4, w, h)).getextrema() == (0, 255)
-    below = render_label(w, h, [RACK], inter, 100, "barcode-below", qr=RACK)
+    below = render_label(w, h, [RACK], inter, px, "barcode-below", qr=RACK)
     assert below.size == (w, h) and below.getextrema() == (0, 255)
     assert below.crop((0, 3 * h // 4, w, h)).getextrema() == (0, 255)  # bars in the lower part
     assert below.crop((0, 0, w, h // 4)).getextrema() == (0, 255)  # text in the upper part
-    only = render_label(w, h, [""], inter, 100, "barcode-only", qr=RACK)
+    only = render_label(w, h, [""], inter, px, "barcode-only", qr=RACK)
     assert only.size == (w, h) and only.crop((0, h - 20, w, h)).getextrema() == (0, 255)
     with pytest.raises(ValueError, match="needs QR"):
-        render_label(w, h, [RACK], inter, 100, "barcode")
+        render_label(w, h, [RACK], inter, px, "barcode")
     reg = load(None)
     rows = "rack\nDH35.201/A\nDH35.201/B"  # the 2-up Panduit area is 436 dots: a short code for the test
     spec = Spec.from_dict(

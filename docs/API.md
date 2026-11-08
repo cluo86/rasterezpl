@@ -51,8 +51,10 @@ Paths in requests are relative to the served root and confined to it; only `.ezp
 ### `GET /api/fonts`
 Faces this machine can print: the bundled OFL faces first (`"bundled": true` — Inter, Inter Bold, JetBrains
 Mono, Bebas Neue; they render the same on every machine), then the known candidates that resolve, then any
-`.ttf`/`.otf` under `<root>/fonts`.
-`[{"name": "Inter", "path": "…/rasterezpl/fonts/Inter-Regular.ttf", "bundled": true}, {"name": "arial", "path": "…"}]`
+`.ttf`/`.otf` under `<root>/fonts`, then every face installed on the OS (`"system": true`, named as the font
+names itself — `C:\Windows\Fonts` and the per-user font folder on Windows, the Library folders on macOS, the
+share folders on Linux; 0.20.0). One entry per file.
+`[{"name": "Inter", "path": "…/rasterezpl/fonts/Inter-Regular.ttf", "bundled": true}, {"name": "arial", "path": "…"}, {"name": "Arial Narrow", "path": "C:/Windows/Fonts/ARIALN.TTF", "system": true}]`
 
 ### `GET /api/layouts`
 The label layouts, each with a sample text: `[{"name": "banner", "sample": "PATCH PANEL A\nrack 12 · U31\n…"}, …]`.

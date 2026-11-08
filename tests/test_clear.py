@@ -67,8 +67,8 @@ def test_full_label_job_plans_onto_the_standard_printer(tmp_path):
     assert rz.blocks_outside_areas(data, rz.PANDUIT_S150X225VATY_2UP) and not rz.blocks_outside_areas(data, m)
     regf = tmp_path / "r.yaml"
     regf.write_text(
-        f'printers:\n  p300:\n    transport: "{tmp_path / "s300.ezpl"}"\n    media: panduit-s150x225vaty-2up\n'
-        f'  p203:\n    transport: "{tmp_path / "s203.ezpl"}"\n    media: panduit-s150x225vaty-2up-203\n'
+        f'printers:\n  p300:\n    transport: "{(tmp_path / "s300.ezpl").as_posix()}"\n    media: panduit-s150x225vaty-2up\n'
+        f'  p203:\n    transport: "{(tmp_path / "s203.ezpl").as_posix()}"\n    media: panduit-s150x225vaty-2up-203\n'
     )
     r = load(str(regf))
     root = tmp_path / "root"

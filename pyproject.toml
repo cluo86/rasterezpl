@@ -1,12 +1,12 @@
 [project]
 name = "rasterezpl"
-version = "0.19.0"
-description = "Print any bitmap to Godex-language (EZPL) thermal label printers — Godex, Panduit TDP series — from macOS or Linux, no driver"
+version = "0.20.0"
+description = "Print any bitmap to Godex-language (EZPL) thermal label printers — Godex, Panduit TDP series — from macOS, Linux or Windows, no driver"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [{ name = "Chengqi Luo" }]
-keywords = ["ezpl", "godex", "panduit", "tdp43me", "label printer", "thermal", "raster", "macos", "usb", "cups"]
+keywords = ["ezpl", "godex", "panduit", "tdp43me", "label printer", "thermal", "raster", "macos", "windows", "usb", "cups"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -14,6 +14,7 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Topic :: Printing",
@@ -27,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 svg = ["cairosvg>=2.7"]  # SVG pictures on labels (or install librsvg for rsvg-convert)
 usb = ["pyusb>=1.2"]  # `--to usb:` — writes to the USB printer-class device itself (macOS 26 has no raw CUPS queues)
+windows = ["pywin32>=306; sys_platform == 'win32'"]  # `--to win:<queue>` — RAW through the Windows spooler (no WinUSB swap needed)
 dev = [
     "pytest>=8.0",
     "pytest-github-actions-annotate-failures>=0.2",  # a failing test on CI becomes an annotation on the run (file, line, message) — readable without the job log

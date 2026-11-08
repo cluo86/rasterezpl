@@ -14,7 +14,9 @@ from .stream import label_block
 
 
 def ruler_page(m: Media, font_path: str, over=None):
-    from PIL import Image, ImageChops, ImageDraw, ImageFont
+    from PIL import Image, ImageChops, ImageDraw
+
+    from .text import load_font
 
     w, h = m.width_px, m.length_px
     img = Image.new("L", (w, h), 255)
@@ -23,7 +25,7 @@ def ruler_page(m: Media, font_path: str, over=None):
             raise ValueError(f"overlay {over.size} is not the page {(w, h)}")
         img = ImageChops.darker(img, over.convert("L"))
     d = ImageDraw.Draw(img)
-    f = ImageFont.truetype(font_path, max(10, m.dpi // 20))
+    f = load_font(font_path, max(10, m.dpi // 20))
     for y0 in (0, h // 2, h - 1):
         for x in range(0, w, 10):
             ln = 30 if x % 50 == 0 else 12

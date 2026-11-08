@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.20.0 — 2026-11-08
+
+- The Windows port. Every advantage over the vendor tools (one rendering, the stock guard, bookends, packing,
+  the log, one stream per board) needed a Mac or Linux beside the printer, while the site laptops that GoLabel
+  and EasyMark live on run Windows. CI now runs the suite on Windows, macOS and Linux (3.11–3.13), and that
+  matrix was the survey of the port — three findings, each fixed:
+  - **The raster depended on the machine.** The first red run was a bundled-face test: Inter Bold at 100 dots/em
+    set `IAD108.1 SC77 R6225/A` 1162 dots wide on the Windows and macOS runners and 1150.9 on Ubuntu and the
+    developer's Mac. Pillow uses the raqm engine (HarfBuzz, kerning) wherever libfribidi happens to be
+    installed — Homebrew, Ubuntu — and FreeType's basic engine elsewhere. "What you preview is what prints" was
+    true on one machine; two machines did not agree. Every font load (`render_text`, the bookends, the ruler,
+    the proof caption) now goes through `load_font`, pinned to the basic engine that is inside every Pillow
+    wheel: one raster everywhere, kerning lost everywhere. A label composed before 0.20.0 on a machine with
+    fribidi may differ from its recomposition by a dot or two of letter spacing — the pinned stream tests are
+    unchanged (they compare paths of one run), the one test at the fit limit was two dots past it and is set
+    smaller.
+  - A Windows temp path pasted into a YAML double-quoted string is read as escapes (`"C:\Users…"` → `\U`
+    "expected 8 hexadecimal numbers"): the test fixtures now spell paths POSIX-style inside YAML, as the demo
+    registry always did. The files the tool writes are read back as UTF-8 explicitly (Windows' default codec is
+    cp1252 and the log carries `—` and `→`). A connection reset in the fake-port tests is a `SO_LINGER` struct
+    of two shorts on Windows, two ints elsewhere. A fixed sleep after a slow send was not enough on a slow
+    runner; the reader is joined. `.gitattributes` pins LF.
+  - `confine()` resolves the root as well as the file (an 8.3 short name or a symlinked temp dir resolved on one
+    side only read as "outside the served root").
+- `win:<queue name>`: a Windows print queue written through the spooler with the RAW datatype — the bytes pass
+  through unchanged to the queue's port, so the vendor driver the laptop already has is the pipe and no WinUSB /
+  libusb swap is needed. Chunked like the TCP send; a failure mid-document aborts the spooled job and raises a
+  `SendError` naming the bytes the spooler took (what reached the printer depends on the queue's spooling
+  setting: read the roll); an unknown queue is a refusal with nothing sent. `status` over `win:` reports the
+  spooler's status word and the jobs waiting and never `00` (no `~S,CHECK` through a queue), so `print --status`
+  refuses as over `lp:`. Extra `rasterezpl[windows]` (pywin32); the module is imported on demand, so the package
+  imports everywhere. Tested against a recorded fake of the API on every OS; the real print from a Windows
+  laptop is the gate still open.
+- `rasterezpl queues`: the Windows queues (name, port, driver, status, jobs, default) for `win:`, or on macOS /
+  Linux the CUPS queues `lpstat` knows for `lp:`.
+- `usb:` on Windows says why it cannot (usbprint.sys owns the device; Zadig would swap a WinUSB driver in) and
+  points at `win:` — instead of a `NoBackendError` traceback. Off Windows the missing-backend message names
+  libusb.
+- The registry is looked for at `%APPDATA%\rasterezpl\printers.yaml` first (wherever `APPDATA` is set), then
+  `~/.config/rasterezpl/printers.yaml`; `rasterezpl printers` with no file says where it looked and where to put
+  one. `--registry` and `$RASTEREZPL_PRINTERS` unchanged.
+- Fonts: the OS font folders are enumerated (`system_fonts`: `C:\Windows\Fonts` and the per-user folder on
+  Windows, the Library folders on macOS, the share folders on Linux), each face under the name it gives itself,
+  read with Pillow — no font registry; `find_font` resolves those names after the bundled faces and the known
+  candidates, and `/api/fonts` lists them marked `system`. The proof caption uses the bundled Inter instead of a
+  Mac path for Arial.
+- The console tolerates a codec that cannot encode `→` / `·` (prints `?` instead of dying when output is
+  redirected under cp1252). `python -m rasterezpl` runs the CLI. `status` exits with the message, not a trace,
+  when a transport's library is missing.
+- CI: failing tests are annotated on the run (file, line, message) so a matrix failure is readable without the
+  job log. README: a *Windows* section, the layout-engine lesson, the status.
+
 ## 0.19.0 — 2026-10-25
 
 - The registration prefix is ALWAYS sent — `^R<n>` and `~Q<±n>` both, a zero as `^R0` / `~Q+0` — in front of

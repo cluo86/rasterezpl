@@ -69,14 +69,12 @@ def end_lines(file: str, count: int, ts: str) -> list[str]:
 
 
 def _font(name: str, px: int) -> ImageFont.FreeTypeFont:
-    from PIL import ImageFont
-
-    from .text import find_font
+    from .text import find_font, load_font
 
     path = find_font(name)
     if path is None:
         raise ValueError(f"bookends need the bundled face {name!r}")
-    return ImageFont.truetype(path, max(1, px))
+    return load_font(path, max(1, px))
 
 
 def _hatch(d, box: tuple[int, int, int, int], stripe: int) -> None:

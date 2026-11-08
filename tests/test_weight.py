@@ -88,7 +88,7 @@ def test_printer_heat_applied_at_send_time(tmp_path, capsys):
     reg.write_text(
         "media:\n  flags:\n    dpi: 203\n    width_mm: 92\n    length_mm: 34\n    gap_mm: 2\n    speed: 3\n"
         "    darkness: 14\n    stop_mm: 18\n    areas_in: [[0, 0, 3.622, 1.339]]\n"
-        f'printers:\n  hot:\n    transport: "{spool}"\n    media: flags\n    darkness: 17\n    speed: 2\n'
+        f'printers:\n  hot:\n    transport: "{spool.as_posix()}"\n    media: flags\n    darkness: 17\n    speed: 2\n'
     )
     r = load(str(reg))
     assert r.printers["hot"].darkness == 17 and r.printers["hot"].speed == 2
