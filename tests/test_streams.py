@@ -54,6 +54,15 @@ def fast_backoff(monkeypatch):
     monkeypatch.setattr(transport, "READY_BACKOFF_S", (0.05, 0.1, 0.2))
 
 
+@pytest.fixture(autouse=True)
+def frozen_minute(monkeypatch):
+    """The bookends carry the minute; a test that composes them twice (once to look, once inside run) must not
+    straddle a minute boundary — it did on a macOS runner (2026-11-08), one byte of the END mark differed."""
+    from rasterezpl import bookends
+
+    monkeypatch.setattr(bookends, "now", lambda: "2026-10-16 14:05")
+
+
 def _site(tmp_path, port=1, one_printer=False, ink=False):
     reg = tmp_path / "printers.yaml"
     t1 = tmp_path / "spool1.ezpl"

@@ -363,8 +363,15 @@ def test_system_fonts_are_listed_and_resolve_by_their_own_names():
     assert text.find_font(name) == path and text.find_font(name.upper()) == path
     listed = fonts_available()
     by_path = {e["path"]: e for e in listed}
-    assert listed[0]["bundled"] is True and by_path[path].get("system") is True
+    assert (
+        listed[0]["bundled"] is True and path in by_path
+    )  # listed — as a known candidate (Arial) or as system
     assert len(by_path) == len(listed)  # one entry per file
+    assert all(
+        e.get("system")
+        for e in listed
+        if e["path"] not in {text.find_font(n) for n in text.FONT_CANDIDATES} and not e.get("bundled")
+    )
     # a bundled face is never shadowed by an installed one of the same name
     assert text.find_font("Inter") == text.bundled_fonts()["Inter"]
 

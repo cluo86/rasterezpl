@@ -168,7 +168,7 @@ def test_same_stock_other_dpi_is_not_the_same_media(tmp_path):
     reg_both = tmp_path / "rboth.yaml"
     reg_both.write_text(
         reg300.read_text(encoding="utf-8")
-        + f'  p203:\n    transport: "{tmp_path / "s203.ezpl"}"\n    media: panduit-s150x225vaty-2up-203\n'
+        + f'  p203:\n    transport: "{(tmp_path / "s203.ezpl").as_posix()}"\n    media: panduit-s150x225vaty-2up-203\n'
     )
     rows = plan(root, load(str(reg_both)), [{"file": "j203.ezpl"}])
     assert rows[0].ok and rows[0].printer == "p203"
