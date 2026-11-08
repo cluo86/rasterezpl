@@ -154,7 +154,9 @@ def test_a_wedged_port_refuses_connections_and_the_sender_waits_it_out(fake_prin
 def test_a_cut_names_the_bytes_and_the_fake_kept_what_it_accepted(fake_printer):
     K = 150_000
     fp = fake_printer(cut_after_bytes=K)
-    data = bytes(range(256)) * 4000  # 1 MB
+    # 32 MiB: the sender must still be in sendall when the RST lands — a Linux loopback's send + receive buffers
+    # swallowed a 1 MB job whole before the fake's cut took effect (ubuntu runner, 2026-11-08: DID NOT RAISE)
+    data = bytes(range(256)) * 131_072
     with pytest.raises(SendError) as ei:
         send_tcp(data, "127.0.0.1", fp.port, timeout_s=5.0, deadline_s=30.0, ready_s=1.0)
     e = ei.value
@@ -187,7 +189,10 @@ def test_printcart_cut_inside_file_two_reports_a_row_the_roll_can_confirm(fake_p
         },
     )
     del r0
-    for name, n in (("two.ezpl", 2), ("b30.ezpl", 40), ("b31.ezpl", 40)):
+    # b30 is ~19 MB of ink and the cut falls an eighth of the way in: the SENDER's count runs ahead of the fake's by
+    # whatever the loopback's kernel buffers hold (an ubuntu runner took the whole second half of a 2.4 MB file
+    # that way, 2026-11-08, and reported b30 as sent) — the file must dwarf them, as the stall test's does
+    for name, n in (("two.ezpl", 2), ("b30.ezpl", 320), ("b31.ezpl", 40)):
         (root / name).write_bytes(_ink_job(m, n))
     probe = load(str(tmp_path / "x.yaml")) if False else None
     del probe
@@ -197,7 +202,7 @@ def test_printcart_cut_inside_file_two_reports_a_row_the_roll_can_confirm(fake_p
         root, load(str(reg)), [{"file": f, "printer": "fake"} for f in ("two.ezpl", "b30.ezpl", "b31.ezpl")]
     )
     st = compose_streams(root, load(str(reg)), rows)[0]
-    K = st.parts[1].offset + st.parts[1].length // 2
+    K = st.parts[1].offset + st.parts[1].length // 8
     fp = fake_printer(cut_after_bytes=K)
     reg.write_text(REG.format(target=fp.target), encoding="utf-8")
     r = load(str(reg))
@@ -207,7 +212,7 @@ def test_printcart_cut_inside_file_two_reports_a_row_the_roll_can_confirm(fake_p
     entries = [json.loads(ln) for ln in (root / LOG_NAME).read_text(encoding="utf-8").splitlines()]
     assert [e["ok"] for e in entries] == [True, False, False]
     cut = entries[1]["error"]
-    assert cut.startswith("cut inside b30.ezpl at web row ") and cut.endswith(" of 40")
+    assert cut.startswith("cut inside b30.ezpl at web row ") and cut.endswith(" of 320")
     row = int(cut.split("web row ")[1].split(" ")[0])
     # what the fake accepted of b30: the complete blocks it has are on the paper
     accepted = fp.connections[0].accepted
@@ -220,7 +225,7 @@ def test_printcart_cut_inside_file_two_reports_a_row_the_roll_can_confirm(fake_p
         if pos <= len(got):
             complete += 1
     assert row >= complete + 1, (row, complete)  # never before the paper
-    assert any("resume with --labels" in n and f"{(row - 1) * 2 + 1}-80" in n for n in notes)
+    assert any("resume with --labels" in n and f"{(row - 1) * 2 + 1}-640" in n for n in notes)
     assert entries[2]["note"] == "not sent"
 
 
