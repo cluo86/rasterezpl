@@ -120,9 +120,9 @@ def test_a_connection_while_busy_is_reset_before_any_byte_and_the_sender_waits(f
 
 
 def test_a_wedged_port_refuses_connections_and_the_sender_waits_it_out(fake_printer):
-    fp = fake_printer(buffer_bytes=1 << 20, drain_bps=100_000, reset_while_busy=True, wedge_s=0.6)
-    assert send_tcp(b"a" * 300_000, "127.0.0.1", fp.port, timeout_s=5.0, deadline_s=30.0) == 300_000
-    assert fp.wait_accepted(300_000, 5.0) and fp.busy  # three seconds of printing ahead
+    fp = fake_printer(buffer_bytes=1 << 20, drain_bps=100_000, reset_while_busy=True, wedge_s=2.0)
+    assert send_tcp(b"a" * 400_000, "127.0.0.1", fp.port, timeout_s=5.0, deadline_s=30.0) == 400_000
+    assert fp.wait_accepted(400_000, 5.0) and fp.busy  # four seconds of printing ahead
     # a raw connection while busy: reset at once, and the port goes down for the wedge
     s = socket.create_connection(("127.0.0.1", fp.port), timeout=2.0)
     s.settimeout(1.0)
@@ -131,10 +131,13 @@ def test_a_wedged_port_refuses_connections_and_the_sender_waits_it_out(fake_prin
     except OSError:
         pass
     s.close()
-    time.sleep(0.1)
+    assert fp.wait_wedged(5.0)  # the fake has closed its listener — not "a moment after the RST reached us"
+    t0 = time.monotonic()
     with pytest.raises(OSError):  # refused while the print server "restarts"
         socket.create_connection(("127.0.0.1", fp.port), timeout=0.5).close()
-    t0 = time.monotonic()
+    assert (
+        time.monotonic() - t0 < 1.5
+    )  # refused, not timed out (a wedge of 2 s leaves room for a slow recv above)
     assert send_tcp(b"c" * 10, "127.0.0.1", fp.port, timeout_s=5.0, deadline_s=30.0, ready_s=10.0) == 10
     assert 0.3 < time.monotonic() - t0 < 8.0
     time.sleep(0.1)

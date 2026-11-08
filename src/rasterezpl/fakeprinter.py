@@ -138,6 +138,7 @@ class FakePrinter:
         self._lsock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self.wedged_until = 0.0
+        self._wedged = threading.Event()  # set while the listening socket is closed
 
     # -- lifecycle ---------------------------------------------------------------------------------------------
     def _listen(self) -> socket.socket:
@@ -227,9 +228,11 @@ class FakePrinter:
                         f"   port {self._port} wedged for {self.profile.wedge_s:g} s (connections refused)"
                     )
                     self._lsock.close()
+                    self._wedged.set()
                     if self._stop.wait(self.profile.wedge_s):
                         return
                     self._lsock = self._listen()
+                    self._wedged.clear()
                     self._event(f"   port {self._port} listening again")
                 continue
             threading.Thread(target=self._serve, args=(conn, c), daemon=True).start()
@@ -303,6 +306,11 @@ class FakePrinter:
                 return False
             time.sleep(0.005)
         return True
+
+    def wait_wedged(self, timeout: float = 30.0) -> bool:
+        """Until the port is down (the listening socket closed after a reset while busy). A test that connects
+        expecting a refusal must wait here: the RST reaches the peer before the fake's thread closes the listener."""
+        return self._wedged.wait(timeout)
 
     def wait_idle(self, timeout: float = 30.0) -> bool:
         """Until the buffer has drained — the fake's END label in the hand."""

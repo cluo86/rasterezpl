@@ -21,7 +21,9 @@
   last complete row (the sender counts bytes handed to the kernel, the board counts bytes read — the reported
   row can only be later, which is why the README calls it the operator's call); the CLI end to end in a
   subprocess, the recorded job byte for byte. The lesson of writing them: the kernel's loopback buffers hide a
-  few hundred KB of a stall, so a stall test needs a job that dwarfs them (16 MB).
+  few hundred KB of a stall, so a stall test needs a job that dwarfs them (16 MB); and a sender's "sent" is the
+  kernel's, not the fake's — a test that asks the fake "busy?" or "wedged?" waits for the fake's own thread
+  (`wait_accepted`, `wait_wedged`) rather than sleeping, which raced on the GitHub runners three ways.
 - The release workflow's smoke test now runs the Windows executable against its own fake printer: the job sent
   over `tcp://` is byte for byte the job written to the demo's file spool, registration prefix included.
 
