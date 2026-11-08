@@ -470,6 +470,40 @@ def test_the_imported_rendering_is_the_same_on_every_machine(reg):
     assert hashlib.sha256(imp.data).hexdigest() == PINNED_EZPX
 
 
+def test_a_media_in_the_printer_frame_gets_the_design_turned_round_same_bytes(reg, tmp_path):
+    """A registry's Godex stock is defined with rotate180: false (its jobs drawn in the printer frame); the same
+    stock with rotate180 on takes the physical frame. The design is physical either way — so the two jobs must be
+    the same bytes on the wire, or one of them prints upside down beside GoLabel's."""
+    p = tmp_path / "frames.yaml"
+    p.write_text(
+        REG
+        + """  flag-printer-frame:
+    dpi: 203
+    width_mm: 50
+    length_mm: 25
+    gap_mm: 2
+    rotate180: false
+    areas_in: [[0, 0, 1.9685, 0.9843]]
+""",
+        encoding="utf-8",
+    )
+    r = load(str(p))
+    d = read_ezpx(ezpx(TWO_BOXES))
+    phys = render_ezpx(d, r.media["flag"], rows=ROWS[1:])
+    prn = render_ezpx(d, r.media["flag-printer-frame"], rows=ROWS[1:])
+    assert not r.media["flag-printer-frame"].rotate180 and prn.data == phys.data
+    # the same for an Easy-Mark project on a one-area page (a two-across media's areas sit elsewhere in the
+    # printer frame when it is defined there — that is the media author's business, not the frame of the design)
+    from dataclasses import replace
+
+    pd = read_pemx(pemx(["a\nb"]))
+    page = (
+        load(None).media["panduit-s150x225vaty-2up-203"].raw_page()
+    )  # one area, the whole page, printer frame
+    turned = replace(page, rotate180=True)
+    assert not page.rotate180 and render_pemx(pd, page).data == render_pemx(pd, turned).data
+
+
 # -- .pemx ---------------------------------------------------------------------------------------------------------
 def test_read_pemx_and_media_matching(reg):
     d = read_pemx(pemx(["l1\nl2", "l3\nl4", "l5"]))

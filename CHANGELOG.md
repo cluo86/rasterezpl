@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.24.1 — 2026-11-08
+
+- The importer draws a design in the physical frame and hands the image to the media; a media defined with
+  `rotate180: false` takes images in the PRINTER frame (the site registry's Godex 92 × 34 stock is defined so,
+  its jobs having been drawn in that frame since 2026-09-26), so for such a media the design is now turned
+  round first. The bytes on the wire are the same for the two definitions of one stock, pinned. Found while
+  setting up the first GoLabel-beside-rasterezpl print on the Windows machine: the registry said
+  `rotate180: false` and the importer would have printed every imported label upside down beside GoLabel's.
+- `examples/golabel_compare.py`: writes a synthetic GoLabel `.ezpx` for a 92 × 34 mm label (the face GoLabel
+  templates use, upright and turned boxes, left and centred text, two lines, a wrapping line, corner marks) to
+  print from GoLabel, and imports it here for the print beside it — the importer's paper check.
+- Lesson: a frame convention lives in the registry (`rotate180`) and in the design program (GoLabel's page is
+  the printer frame turned round, matched on paper 2026-09-26); the importer sat between the two and honoured
+  only one. A rendering that is right in the proof and wrong on the roll is the kind a paper comparison exists
+  to catch — hence the comparison file.
+
 ## 0.24.0 — 2026-11-08
 
 - `max_stream_bytes` on a printer record (`5 MB`, `4 MiB`, or bytes): `printcart` splits that printer's cart

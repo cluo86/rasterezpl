@@ -572,6 +572,14 @@ def _draw_lines(
 
 
 # -- rendering -----------------------------------------------------------------------------------------------------
+def _in_media_frame(img, m: Media):
+    """A design is drawn in the PHYSICAL frame (top-left of the label as the designer saw it — GoLabel's page is
+    the printer frame turned 180°, matched on paper 2026-09-26). A media with ``rotate180`` on takes images in
+    that frame and turns them itself; one with it off takes images in the PRINTER frame (a registry's Godex
+    stock is defined so), so the design is turned round here — the bytes on the wire are the same either way."""
+    return img if m.rotate180 else img.rotate(180)
+
+
 def _face_resolver(substitute: str | None, notes: list[str]) -> Callable[[str, float], str]:
     """A face name → a font path: the face itself when this machine has it, else ``substitute`` (named in the
     notes), else a refusal. Each face is reported once."""
@@ -729,7 +737,7 @@ def render_ezpx(
             ):
                 if b.label() not in clipped:
                     clipped.append(b.label())
-        return img
+        return _in_media_frame(img, m)
 
     labels: list = []
     for row in rows if rows is not None else [None]:
@@ -798,7 +806,7 @@ def render_pemx(
             lines = lines * (ah // (lh * len(lines)))
         img = Image.new("L", (aw, ah), 255)
         clipped += _draw_lines(img, (0, 0, aw, ah), lines, font, px, lh, design.align, "middle", False)
-        imgs.append(img)
+        imgs.append(_in_media_frame(img, m))
     if wrapped:
         notes.append(
             f"{wrapped} line(s) wider than the print area were wrapped by character (Easy-Mark wraps by its own rules)"
