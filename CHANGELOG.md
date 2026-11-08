@@ -10,7 +10,11 @@
   `rotate180: false` and the importer would have printed every imported label upside down beside GoLabel's.
 - `examples/golabel_compare.py`: writes a synthetic GoLabel `.ezpx` for a 92 × 34 mm label (the face GoLabel
   templates use, upright and turned boxes, left and centred text, two lines, a wrapping line, corner marks) to
-  print from GoLabel, and imports it here for the print beside it — the importer's paper check.
+  print from GoLabel, and imports it here for the print beside it — the importer's paper check. Checked on the
+  G500 2026-11-08: the corner marks, the title, the centred two-line box and the turned box land in the same
+  places; GoLabel wraps sooner than we do (its usable width is some 10–15 % under BoundRectWidth — three of our
+  one-line boxes broke in GoLabel) and lets the overflow run below the box where we clip to it. The design
+  carries no database (`DataBaseFormat None`) — GoLabel will not open a layout that names one it cannot find.
 - Lesson: a frame convention lives in the registry (`rotate180`) and in the design program (GoLabel's page is
   the printer frame turned round, matched on paper 2026-09-26); the importer sat between the two and honoured
   only one. A rendering that is right in the proof and wrong on the roll is the kind a paper comparison exists
