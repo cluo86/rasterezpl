@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import zipfile
@@ -551,16 +552,17 @@ def test_import_design_pemx_refuses_data_and_unknown_suffix(tmp_path):
 
 # -- the command ---------------------------------------------------------------------------------------------------
 def run(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    r = subprocess.run(
+    # the child's console is UTF-8 here whatever the machine's is (a Windows runner's is cp1252 and the summary
+    # carries — and ×; the cp1252 fallback itself is test_windows's business)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    return subprocess.run(
         [sys.executable, "-m", "rasterezpl", *args],
         cwd=cwd,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        errors="replace",
+        env=env,
     )
-    assert isinstance(r.stdout, str) and isinstance(r.stderr, str), repr(r)[:800]  # diagnosis on a CI runner
-    return r
 
 
 def test_cli_import_writes_the_job_and_the_proof_and_says_whose_rendering_it_is(tmp_path):
