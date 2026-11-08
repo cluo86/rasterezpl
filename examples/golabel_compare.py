@@ -10,7 +10,8 @@ of a wrap-around flag), and TL / BR marks in two corners so the orientation and 
 
 Then, on the Windows machine beside the printer:
 
-    GoLabel:    open the .ezpx, print one label.
+    GoLabel:    open the .ezpx, print one label (the design carries no database — DataBaseFormat None — or
+                GoLabel asks for a data source before it opens the layout).
     rasterezpl: rasterezpl import OUTDIR/compare-92x34.ezpx --media godex-92x34-flags -o OUTDIR/ours.ezpl --proof OUTDIR/ours.png
                 rasterezpl print OUTDIR/ours.ezpl --to "win:Godex G500 (Copy 3)" --media godex-92x34-flags
 
@@ -48,7 +49,7 @@ TAIL = """    </qlabel>
     <VariableOption />
     <DateFormat>y2-me-dd</DateFormat>
     <TimeFormat>h:m:s</TimeFormat>
-    <DataBaseFormat>ExcelXlsx</DataBaseFormat>
+    <DataBaseFormat>None</DataBaseFormat>
     <DataBaseFilePath />
     <DataBaseSelection />
     <UserID />

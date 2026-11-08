@@ -229,7 +229,10 @@ def read_ezpx(data: bytes) -> EzpxDesign:
         else True,
         sheet=sheet,
         db_path=_text(label.find("DataBaseFilePath")).strip() if label is not None else "",
-        db_format=_text(label.find("DataBaseFormat")).strip() if label is not None else "",
+        # "None" is GoLabel's own word for a design without a database
+        db_format=_text(label.find("DataBaseFormat")).strip().replace("None", "")
+        if label is not None
+        else "",
         row_index=_int(_text(label.find("RowIndex"))) if label is not None else None,
         speed=_int(a.get("Speed")),
         darkness=_int(a.get("Darkness")),
