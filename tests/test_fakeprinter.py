@@ -96,16 +96,16 @@ def test_the_buffer_and_the_drain_make_accepted_not_printed(fake_printer):
     assert send_tcp(data, "127.0.0.1", fp.port, timeout_s=5.0, deadline_s=30.0) == len(data)
     took = time.monotonic() - t0
     assert took > 0.25, took  # the stall was real: 16 MB at 32 MB/s, minus what the kernel buffers absorbed
-    assert fp.busy and 0 < fp.buffered() <= 65_536  # accepted ≠ printed
+    assert fp.wait_accepted(len(data), 5.0) and fp.buffered() <= 65_536  # never more than the buffer in hand
     assert fp.wait_idle(5.0) and not fp.busy
     assert fp.received() == data
 
 
 def test_a_connection_while_busy_is_reset_before_any_byte_and_the_sender_waits(fake_printer):
-    fp = fake_printer(buffer_bytes=1 << 20, drain_bps=200_000, reset_while_busy=True)
-    first = b"a" * 200_000  # a second's worth of printing
+    fp = fake_printer(buffer_bytes=1 << 20, drain_bps=100_000, reset_while_busy=True)
+    first = b"a" * 200_000  # two seconds' worth of printing
     assert send_tcp(first, "127.0.0.1", fp.port, timeout_s=5.0, deadline_s=30.0) == len(first)
-    assert fp.busy
+    assert fp.wait_accepted(len(first), 5.0) and fp.busy  # the sender is done; the fake has it all and prints
     second = b"b" * 1000
     t0 = time.monotonic()
     assert (
@@ -120,8 +120,9 @@ def test_a_connection_while_busy_is_reset_before_any_byte_and_the_sender_waits(f
 
 
 def test_a_wedged_port_refuses_connections_and_the_sender_waits_it_out(fake_printer):
-    fp = fake_printer(buffer_bytes=1 << 20, drain_bps=1_000_000, reset_while_busy=True, wedge_s=0.6)
+    fp = fake_printer(buffer_bytes=1 << 20, drain_bps=100_000, reset_while_busy=True, wedge_s=0.6)
     assert send_tcp(b"a" * 300_000, "127.0.0.1", fp.port, timeout_s=5.0, deadline_s=30.0) == 300_000
+    assert fp.wait_accepted(300_000, 5.0) and fp.busy  # three seconds of printing ahead
     # a raw connection while busy: reset at once, and the port goes down for the wedge
     s = socket.create_connection(("127.0.0.1", fp.port), timeout=2.0)
     s.settimeout(1.0)
@@ -141,6 +142,7 @@ def test_a_wedged_port_refuses_connections_and_the_sender_waits_it_out(fake_prin
     # and the deadline is honoured: a port that stays wedged is "not ready", 0 bytes
     fp2 = fake_printer(buffer_bytes=1 << 20, drain_bps=100, reset_while_busy=True, wedge_s=30.0)
     send_tcp(b"a" * 1000, "127.0.0.1", fp2.port, timeout_s=5.0, deadline_s=30.0)
+    assert fp2.wait_accepted(1000, 5.0)
     with pytest.raises(SendError) as ei:
         send_tcp(b"b", "127.0.0.1", fp2.port, timeout_s=1.0, deadline_s=5.0, ready_s=0.6, probe_s=0.1)
     assert ei.value.bytes_sent == 0 and "nothing sent" in str(ei.value)

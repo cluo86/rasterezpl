@@ -294,6 +294,16 @@ class FakePrinter:
         data = self.received() if job is None else self.jobs()[job - 1]
         return decode_job(data, m)
 
+    def wait_accepted(self, n: int, timeout: float = 30.0) -> bool:
+        """Until the fake has read ``n`` job bytes in all. A sender returns when the KERNEL took its bytes; the
+        fake's thread reads them a moment later — a test that asks "busy?" right after a send must wait here."""
+        t_end = time.monotonic() + timeout
+        while sum(c.accepted for c in self.connections) < n:
+            if time.monotonic() > t_end:
+                return False
+            time.sleep(0.005)
+        return True
+
     def wait_idle(self, timeout: float = 30.0) -> bool:
         """Until the buffer has drained — the fake's END label in the hand."""
         t_end = time.monotonic() + timeout
