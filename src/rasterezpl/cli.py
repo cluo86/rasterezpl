@@ -13,6 +13,7 @@ rasterezpl decode  job.ezpl --media M -o page.png [--block N]              a job
 rasterezpl printcart FILE[:LABELS] … [--root DIR] [--dry-run] [--bookends] [--no-pack] [--proof F]   several files, one plan, ONE stream per printer
 rasterezpl serve   --root DIR [--host 127.0.0.1] [--port 8123] [--open]   the browser front end (server.py)
 rasterezpl demo    [DIR] [--no-open] [--no-serve]                         a playground: demo jobs + file-spool printers
+rasterezpl fakeprinter [--port 9100] [--profile ideal|netps] [knobs] [--record DIR]   a fake printer on a TCP port (the NetPS board's vices on demand)
 """
 
 from __future__ import annotations
@@ -208,6 +209,35 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument("--no-serve", action="store_true", help="write the demo root only")
 
     q = sub.add_parser(
+        "fakeprinter",
+        help="a fake EZPL printer on a TCP port — never a real one: records every byte per connection, answers "
+        "~S,CHECK, and on demand behaves like the TDP43ME's NetPS board (prints from a buffer at a drain rate, "
+        "resets a connection opened while busy and wedges the port, cuts a stream at a byte count); point "
+        "--to tcp://127.0.0.1:PORT at it",
+    )
+    q.add_argument("--host", default="127.0.0.1")
+    q.add_argument("--port", type=int, default=9100, help="0 = any free port (printed)")
+    q.add_argument(
+        "--profile",
+        default="ideal",
+        help="ideal (no vices) | netps (the measured TDP43ME board); knobs override",
+    )
+    q.add_argument("--drain-bps", type=float, help="bytes/s printed out of the buffer (0 = instant)")
+    q.add_argument("--buffer-bytes", type=int, help="input buffer: reading stops while it is full")
+    q.add_argument(
+        "--reset-while-busy",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="reset a NEW connection while the buffer still drains",
+    )
+    q.add_argument("--wedge-s", type=float, help="after such a reset, refuse connections this long")
+    q.add_argument(
+        "--cut-after-bytes", type=int, help="reset a connection once it accepted this many bytes (0 = never)"
+    )
+    q.add_argument("--status", help="the ~S,CHECK reply (default 00)")
+    q.add_argument("--record", metavar="DIR", help="write every job connection's bytes to DIR/job-<n>.ezpl")
+
+    q = sub.add_parser(
         "printcart",
         help="several job files in ONE plan and ONE stream per printer: FILE[:LABELS] … — the plan (file, labels, "
         "count, printer chosen by the file's media) is shown, then the files go back to back over one connection "
@@ -295,6 +325,23 @@ def main(argv: list[str] | None = None) -> int:
         from .server import serve
 
         return serve(Path(args.root), args.host, args.port, args.registry, args.log, open_browser=args.open)
+    if args.cmd == "fakeprinter":
+        from .fakeprinter import profile_from_args
+        from .fakeprinter import serve as serve_fake
+
+        try:
+            prof = profile_from_args(
+                args.profile,
+                args.drain_bps,
+                args.buffer_bytes,
+                args.reset_while_busy,
+                args.wedge_s,
+                args.cut_after_bytes,
+                args.status,
+            )
+        except ValueError as e:
+            sys.exit(str(e))
+        return serve_fake(prof, args.host, args.port, args.record)
     reg = load(args.registry)
 
     if args.cmd == "printcart":

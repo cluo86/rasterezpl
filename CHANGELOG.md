@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.22.0 — 2026-11-08
+
+- A fake printer: `rasterezpl fakeprinter`, `rasterezpl.FakePrinter`, the `fake_printer` pytest fixture. The
+  TDP43ME's NetPS board taught its lessons by losing labels (2026-10-16/17) and `send_tcp` / `printcart` encode
+  them, but nothing pinned those lessons except hand-written listening sockets inside the tests. The fake is
+  the board on a TCP port with its vices as knobs: a buffer (`buffer_bytes`) printed out at a rate
+  (`drain_bps`) — the port stops reading while the buffer is full, so the sender's TCP window fills and the
+  chunked send rides the stall exactly as on the board, and "sent" is visibly not "printed" (`busy`); a NEW
+  connection while busy is reset before any byte (`reset_while_busy`) and the listening socket then closes for
+  `wedge_s` so connecting is refused, as the board's print server restart does; a connection is cut after
+  `cut_after_bytes`; `~S,CHECK` is answered with `status_reply`. `PROFILES["netps"]` carries the measured
+  numbers (8 KB/s, 4 MB buffer, resets, 90 s wedge, cut at 7,229,016 bytes); `ideal` has none. Every byte is
+  recorded per connection with a verdict (accepted / RESET / CUT / status), `--record DIR` writes `job-<n>.ezpl`,
+  `.decode(media)` shows the pages the roll would carry.
+- Tests against it, on every OS of the matrix: a job and its decode; the stall and `busy`; a reset before the
+  first byte retried until the board is free and nothing printed twice; a wedge refused and waited out, and the
+  ready deadline honoured with 0 bytes; a cut naming the bytes, with the fake's accepted count never above the
+  sender's; `printcart` cut inside file two of three reporting a resume row that is never BEFORE the paper's
+  last complete row (the sender counts bytes handed to the kernel, the board counts bytes read — the reported
+  row can only be later, which is why the README calls it the operator's call); the CLI end to end in a
+  subprocess, the recorded job byte for byte. The lesson of writing them: the kernel's loopback buffers hide a
+  few hundred KB of a stall, so a stall test needs a job that dwarfs them (16 MB).
+- The release workflow's smoke test now runs the Windows executable against its own fake printer: the job sent
+  over `tcp://` is byte for byte the job written to the demo's file spool, registration prefix included.
+
 ## 0.21.0 — 2026-11-08
 
 - The Windows executable for a laptop without Python — the real goal of the port: GoLabel and EasyMark live on

@@ -62,6 +62,18 @@ jobs:
           $EXE queues
           $EXE status --to "win:Microsoft Print to PDF" && exit 1 || echo "(never 00 over a queue: a refusal, as intended)"
           test -s "$RUNNER_TEMP/proof.pdf" && test -s "$RUNNER_TEMP/spool-1.png"
+          # the exe against the exe's own fake printer (no hardware): the job it sends over tcp:// is byte for byte the
+          # job it writes to the demo's file spool — the registration prefix included (--offset = the demo record's)
+          $EXE fakeprinter --port 9101 --record "$RUNNER_TEMP/rec" > "$RUNNER_TEMP/fake.log" 2>&1 &
+          FAKE=$!
+          sleep 3
+          $EXE --registry "$D/printers.yaml" status --to tcp://127.0.0.1:9101
+          $EXE --registry "$D/printers.yaml" print "$D/patterns/checker.ezpl" --printer demo-panduit
+          $EXE --registry "$D/printers.yaml" print "$D/patterns/checker.ezpl" --to tcp://127.0.0.1:9101 --media panduit-s150x225vaty-2up --offset 0.01,0
+          sleep 1
+          kill $FAKE || true
+          cat "$RUNNER_TEMP/fake.log"
+          cmp "$RUNNER_TEMP/rec/job-2.ezpl" "$D/spool/demo-panduit.ezpl" && echo "fake printer received the spool's bytes exactly"
       - run: uv run python .github/scripts/fingerprint.py fingerprint.txt -- dist/rasterezpl/rasterezpl.exe
       - uses: actions/upload-artifact@v4
         with:

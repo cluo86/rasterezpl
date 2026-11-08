@@ -216,6 +216,29 @@ printer offset until you print a ruler.
   inside every Pillow wheel: one raster everywhere, no kerning anywhere. A label composed before 0.20.0 on a
   machine with fribidi may differ from its recomposition by a dot or two of letter spacing.
 
+## A fake printer, for the sender's sake
+
+```
+rasterezpl fakeprinter --port 9100 --profile netps        # the TDP43ME's NetPS board, as measured
+rasterezpl print job.ezpl --to tcp://127.0.0.1:9100 --media panduit-s150x225vaty-2up
+rasterezpl fakeprinter --port 0 --record jobs/ --cut-after-bytes 500000 --no-reset-while-busy
+```
+
+Everything known about the Panduit TDP43ME's Ethernet board was learned by losing labels (see *Long jobs on an
+Ethernet board*), and until 0.22.0 nothing pinned those lessons but hand-written sockets in the tests. The fake
+printer is that board on a port, its vices as knobs: it accepts a job into a buffer of `--buffer-bytes` and
+"prints" it at `--drain-bps` (the sender's chunked send stalls on its pace exactly as on the real board, and
+right after the send returns the fake is still busy — accepted is not printed), it resets a connection opened
+while busy (`--reset-while-busy`) and then refuses the port for `--wedge-s` (the print server restart), it cuts a
+stream after `--cut-after-bytes`, and it answers `~S,CHECK` with `--status` (default `00`). `--profile netps`
+is the measured board (8 KB/s, a 4 MB buffer, resets while busy, 90 s wedge, cut at 7,229,016 bytes); `ideal`
+has none of it. It records every byte per connection (`--record DIR` writes `job-<n>.ezpl` files — `decode`
+them like any job) and prints a verdict line per connection: accepted, RESET, CUT, status. Never a real printer:
+it makes the sender's behaviour testable on any machine, which is how the test suite now exercises `send_tcp`,
+`printcart`'s one stream, the cut report and the resume row — and how the release workflow proves the Windows
+executable sends over `tcp://` what it writes to a spool. As a library: `rasterezpl.FakePrinter(profile)` with
+`.target`, `.jobs()`, `.decode(media)`, `.busy`; as a pytest fixture: `tests/conftest.py`'s `fake_printer`.
+
 ## Try it with no printer
 
 ```
