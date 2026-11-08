@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.21.0 — 2026-11-08
+
+- The Windows executable for a laptop without Python — the real goal of the port: GoLabel and EasyMark live on
+  site laptops that have neither Python nor a Mac beside them. `packaging/rasterezpl.spec` is a ONE-FOLDER
+  PyInstaller build carrying the bundled faces, the web page and pywin32; `.github/workflows/release.yml` builds
+  it on `windows-latest`, runs it through the demo, a dry run with its proof, the ruler, a packed cart with
+  bookends to the file spool, `decode` and `queues`, and on a `v<version>` tag attaches
+  `rasterezpl-<version>-windows-x64.zip` to the GitHub release with that version's CHANGELOG section as the
+  notes (the tag must match the package version). Built and smoke-tested the same way on a real Windows 11
+  machine with a Godex G500 on its spooler (39 MB folder, 5 MB exe); not yet printed from — the owner's gate.
+- The one-rendering promise is now CHECKED, not claimed: `.github/scripts/fingerprint.py` composes the demo's
+  bundled-face jobs (every layout, QR, Code 128, the clear-laminate sheet, the patterns) and a packed cart to
+  the file spool, and hashes the `.ezpl` bytes. `ci.yml` does it on all nine OS × Python jobs and a `compare`
+  job demands one answer; `release.yml` compares the executable's rendering on Windows with the source tree's
+  on Linux byte for byte. On 2026-11-08 the six hashes agreed across Ubuntu, macOS, Windows CI runners, a
+  developer Mac and a real Windows 11 machine — after the 0.20.0 engine pin; before it they would not have.
+  Left out on purpose: the text jobs set in the OS's Arial / DejaVu Sans, the ruler, and anything with a
+  timestamp. First lesson of the check itself: a fingerprint written in text mode on Windows is CRLF and
+  `diff` disagrees with itself — it is written LF everywhere.
+- The `usb:` message names the libusb install for the OS at hand (Homebrew on a Mac, apt on Linux, the queue
+  on Windows) instead of `brew` everywhere.
+
 ## 0.20.0 — 2026-11-08
 
 - The Windows port. Every advantage over the vendor tools (one rendering, the stock guard, bookends, packing,

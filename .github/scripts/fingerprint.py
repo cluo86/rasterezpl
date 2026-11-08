@@ -46,7 +46,7 @@ def main(argv: list[str]) -> int:
             print(f"missing {rel}", file=sys.stderr)
             return 1
         lines.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {rel}  {p.stat().st_size} bytes")
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")  # LF on Windows too: the files are diffed
     print("\n".join(lines))
     return 0
 

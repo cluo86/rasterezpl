@@ -52,8 +52,12 @@ def _usb_modules():
         import usb.util
     except ImportError:
         raise RuntimeError(
-            'usb: needs pyusb and libusb (pip install "rasterezpl[usb]"; brew install libusb)'
-            + (f" — {WIN_USB_NOTE}" if sys.platform == "win32" else "")
+            'usb: needs pyusb (pip install "rasterezpl[usb]") and libusb'
+            + (
+                f" — {WIN_USB_NOTE}"
+                if sys.platform == "win32"
+                else (" (brew install libusb)" if sys.platform == "darwin" else " (apt install libusb-1.0-0)")
+            )
         ) from None
     return usb.core, usb.util
 

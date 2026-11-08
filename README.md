@@ -116,7 +116,27 @@ The site laptops run Windows; that is where GoLabel and EasyMark live, and since
 - **Console**: the summaries carry `→` and `·`. A real Windows console prints them (Python's console is UTF-8);
   output redirected to a file under the cp1252 code page prints `?` for them instead of dying
   (`PYTHONUTF8=1` makes every stream UTF-8).
-- `python -m rasterezpl` is the command line too (the packaged executable, when there is one, runs it).
+- `python -m rasterezpl` is the command line too; the packaged executable runs the same.
+
+### The executable (no Python on the laptop)
+
+Every tagged release carries `rasterezpl-<version>-windows-x64.zip`: a one-folder PyInstaller build. Unzip it
+anywhere, and `rasterezpl.exe` is the whole command line — the four bundled faces and the page are inside the
+folder, pywin32 for `win:` included. Put the registry at `%APPDATA%\rasterezpl\printers.yaml`, then
+
+```
+rasterezpl.exe queues                                   # the queue the vendor driver made for the printer
+rasterezpl.exe demo C:\rz-demo --no-serve                # the playground, to a folder of your choice
+rasterezpl.exe print job.ezpl --to "win:Godex G500" --media <media> --dry-run --proof proof.pdf
+rasterezpl.exe serve --root C:\labels --open             # the page, the cart, the log — same as on a Mac
+```
+
+The build is checked before it is released: `release.yml` runs the exe through the demo, a dry run with its proof,
+the ruler, a packed cart to the file spool, `decode` and `queues`, and then hashes the jobs the exe composes
+from the bundled faces against the same jobs composed from the source tree on Linux — they must match byte for
+byte (`.github/scripts/fingerprint.py`; `ci.yml` does the same across its nine OS × Python jobs on every push).
+That is the one-rendering promise, proven across machines rather than claimed. A one-file build is deliberately
+not offered: it unpacks itself at every start and antivirus dislikes it.
 
 ## Long jobs on an Ethernet board
 
@@ -320,7 +340,10 @@ rz.send(data, "usb:TDP43ME", m, offset_in=(0.013, 0.03))
 ## Developing
 
 `make check` runs what CI runs — ruff, `ruff format --check`, mypy and the tests — in that order; run it before
-a push (CI was red for a week of releases on mypy errors nobody ran locally).
+a push (CI was red for a week of releases on mypy errors nobody ran locally). CI runs it on Ubuntu, Windows and
+macOS and compares the rendering across all of them. A release is a tag: `git tag v0.21.0 && git push --tags`
+builds the Windows executable, checks it against the source rendering, and attaches the zip to the GitHub
+release with that version's CHANGELOG section as the notes.
 
 ## Status
 
