@@ -410,7 +410,7 @@ def test_wrapping_and_clipping_are_reported_never_silent(reg):
 
 def test_tables_csv_and_xlsx(tmp_path):
     csv_p = tmp_path / "rows.csv"
-    csv_p.write_text("\ufeffa;b;c\r\n1;2;3\r\n4;5;6\r\n\r\n", encoding="utf-8")
+    csv_p.write_bytes("\ufeffa;b;c\r\n1;2;3\r\n\r\n4;5;6\r\n\r\n".encode("utf-8"))  # BOM, CRLF, a blank row
     assert read_table(csv_p) == ([["a", "b", "c"], ["1", "2", "3"], ["4", "5", "6"]], None)
     openpyxl = pytest.importorskip("openpyxl")
     wb = openpyxl.Workbook()

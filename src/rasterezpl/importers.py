@@ -350,8 +350,8 @@ def read_pemx(data: bytes) -> PemxDesign:
 # -- the data --------------------------------------------------------------------------------------------------------
 def read_table(path: Path, sheet: str | None = None) -> tuple[list[list[str]], str | None]:
     """The rows of a ``.csv`` / ``.tsv`` / ``.txt`` (delimiter sniffed, BOM tolerated) or of one sheet of a
-    ``.xlsx`` (openpyxl, the ``xlsx`` extra; ``sheet`` by name, default the first) as strings, trailing empty
-    rows dropped; and the sheet used."""
+    ``.xlsx`` (openpyxl, the ``xlsx`` extra; ``sheet`` by name, default the first) as strings, blank rows
+    dropped; and the sheet used."""
     if path.suffix.lower() in (".xlsx", ".xlsm"):
         try:
             import openpyxl
@@ -373,8 +373,7 @@ def read_table(path: Path, sheet: str | None = None) -> tuple[list[list[str]], s
         first = text.split("\n", 1)[0]
         rows = [list(r) for r in csv.reader(io.StringIO(text), delimiter=sniff_delimiter(first))]
         used = None
-    while rows and not any(c.strip() for c in rows[-1]):
-        rows.pop()
+    rows = [r for r in rows if any(c.strip() for c in r)]  # a blank row is not a label (a sheet's gap, a CRLF twice)
     return rows, used
 
 
